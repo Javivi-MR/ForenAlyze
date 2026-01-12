@@ -16,7 +16,7 @@ La plataforma permite:
 - Visualización de resultados desde una interfaz web
 - Registro e historial de análisis realizados
 
-El sistema está pensado para ser utilizado en entornos profesionales o académicos, priorizando la **automatización**, la **trazabilidad** y el uso de **herramientas forenses existentes**.
+El sistema está pensado para ser utilizado en entornos profesionales o académicos, priorizando la **automatización** y la **trazabilidad**.
 
 ---
 
