@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+
+{% block title %}Informe de análisis · ForenHub{% endblock %}
+
+{% block subnav %}
+<nav class="subnav">
+  <div class="container-fluid">
+    <ul class="nav">
+      <li class="nav-item">
+        <a class="nav-link" href="/dashboard">Dashboard</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/files">Ficheros</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link active" href="/analysis">Análisis</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/logs">Registros</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/storage">Almacenamiento</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 py-lg-4 dashboard-page">
+  <div class="row g-3 g-lg-4">
+    <!-- Columna izquierda: información principal -->
+    <div class="col-lg-8">
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <div>
+            <div class="small text-muted">Archivo analizado</div>
+            <h1 class="h5 mb-0 text-truncate" style="max-width: 480px;" title="{{ file_info.filename_original }}">
+              {{ file_info.filename_original }}
+            </h1>
+          </div>
+          <div class="text-end">
+            <div class="small text-muted mb-1">Veredicto</div>
+            {% set v = analysis.final_verdict %}
+            <span class="badge fs-6
+              {% if v == 'clean' %} bg-success
+              {% elif v == 'suspicious' %} bg-warning text-dark
+              {% elif v == 'malicious' %} bg-danger
+              {% elif v == 'critical' %} bg-danger text-light
+              {% else %} bg-secondary{% endif %}">
+              {{ v or 'N/D' }}
+            </span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="row small mb-3">
+            <div class="col-md-6">
+              <div class="text-muted">Tipo / MIME</div>
+              <div>{{ file_info.file_type or file_info.mime_type or 'N/D' }}</div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-muted">Tamaño</div>
+              <div>
+                {% if file_info.size %}
+                  {{ (file_info.size / 1024 / 1024)|round(2) }} MB
+                {% else %}
+                  N/D
+                {% endif %}
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="text-muted">Usuario</div>
+              <div>{{ user.username if user else 'N/D' }}</div>
+            </div>
+          </div>
+
+          <div class="row small mb-3">
+            <div class="col-md-4">
+              <div class="text-muted">Subido</div>
+              <div>{{ file_info.upload_date or 'N/D' }}</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted">Analizado</div>
+              <div>{{ analysis.analyzed_at or 'N/D' }}</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted">Ruta almacenamiento</div>
+              <div class="text-truncate" style="max-width: 260px;" title="{{ file_info.storage_path }}">
+                {{ file_info.storage_path or 'N/D' }}
+              </div>
+            </div>
+          </div>
+
+          <hr class="border-secondary">
+
+          <div class="small mb-2 text-muted">Hashes</div>
+          <div class="small">
+            <div><span class="text-muted">MD5:</span> {{ file_info.md5 or 'N/D' }}</div>
+            <div><span class="text-muted">SHA1:</span> {{ file_info.sha1 or 'N/D' }}</div>
+            <div class="text-truncate" style="max-width: 100%;" title="{{ file_info.sha256 }}">
+              <span class="text-muted">SHA256:</span> {{ file_info.sha256 or 'N/D' }}
+            </div>
+          </div>
+
+          <hr class="border-secondary">
+
+          <div class="small mb-1 text-muted">Resumen del análisis</div>
+          <p class="small mb-0">
+            {{ analysis.summary or 'No hay resumen disponible para este análisis.' }}
+          </p>
+        </div>
+      </div>
+
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Motores y reglas</span>
+        </div>
+        <div class="card-body small">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <h6 class="small text-muted text-uppercase">ClamAV / Antivirus</h6>
+              {% if antivirus_data %}
+                <pre class="small bg-black bg-opacity-25 p-2 rounded" style="max-height: 220px; overflow:auto; white-space:pre-wrap;">{{ antivirus_data }}</pre>
+              {% else %}
+                <p class="text-muted mb-0">Sin datos de antivirus.</p>
+              {% endif %}
+            </div>
+            <div class="col-md-6">
+              <h6 class="small text-muted text-uppercase">Reglas YARA</h6>
+              {% if yara_matches and yara_matches|length > 0 %}
+                <ul class="list-unstyled small mb-0" style="max-height: 220px; overflow:auto;">
+                  {% for m in yara_matches %}
+                  <li class="mb-2">
+                    <div class="fw-semibold">{{ m.rule or 'Regla' }}</div>
+                    <div class="text-muted">Namespace: {{ m.namespace or 'N/D' }}</div>
+                    {% if m.tags %}
+                    <div class="text-muted">Tags:
+                      {% for tag in m.tags %}
+                        <span class="badge bg-secondary me-1">{{ tag }}</span>
+                      {% endfor %}
+                    </div>
+                    {% endif %}
+                    {% if m.meta %}
+                    <div class="text-muted">Meta:
+                      <code class="small">{{ m.meta }}</code>
+                    </div>
+                    {% endif %}
+                  </li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                <p class="text-muted mb-0">No se han registrado coincidencias YARA.</p>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">VirusTotal</span>
+        </div>
+        <div class="card-body small">
+          {% if vt_data %}
+            {% if vt_summary %}
+              <p class="mb-2">{{ vt_summary }}</p>
+            {% endif %}
+
+            {% if vt_stats %}
+            <div class="d-flex flex-wrap gap-1 mb-2">
+              {% for key, value in vt_stats.items() %}
+                {% if value and value|int > 0 %}
+                  {% set label = key.replace('-', ' ') %}
+                  {% if key == 'malicious' %}
+                    <span class="badge bg-danger">{{ label|capitalize }}: {{ value }}</span>
+                  {% elif key == 'suspicious' %}
+                    <span class="badge bg-warning text-dark">{{ label|capitalize }}: {{ value }}</span>
+                  {% elif key == 'harmless' %}
+                    <span class="badge bg-success">{{ label|capitalize }}: {{ value }}</span>
+                  {% elif key == 'undetected' %}
+                    <span class="badge bg-secondary">{{ label|capitalize }}: {{ value }}</span>
+                  {% else %}
+                    <span class="badge bg-dark">{{ label|capitalize }}: {{ value }}</span>
+                  {% endif %}
+                {% endif %}
+              {% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="text-muted mb-2">
+              {% if vt_total is not none and vt_positives is not none %}
+                Motores que detectan el archivo: <span class="fw-semibold">{{ vt_positives }}/{{ vt_total }}</span>
+              {% elif vt_total is not none %}
+                Motores analizados: <span class="fw-semibold">{{ vt_total }}</span>
+              {% endif %}
+              {% if vt_data.status %}
+                <span class="ms-2">Estado: {{ vt_data.status }}</span>
+              {% endif %}
+            </div>
+
+            {% if file_info.sha256 %}
+            <a href="https://www.virustotal.com/gui/file/{{ file_info.sha256 }}" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener noreferrer">
+              Ver detalle en VirusTotal
+            </a>
+            {% endif %}
+          {% elif analysis.virustotal_result %}
+            <p class="mb-2">No se ha podido interpretar la respuesta de VirusTotal, se muestra el contenido bruto:</p>
+            <pre class="small bg-black bg-opacity-25 p-2 rounded mb-2" style="max-height: 220px; overflow:auto; white-space:pre-wrap;">{{ analysis.virustotal_result }}</pre>
+            {% if file_info.sha256 %}
+            <a href="https://www.virustotal.com/gui/file/{{ file_info.sha256 }}" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener noreferrer">
+              Ver detalle en VirusTotal
+            </a>
+            {% endif %}
+          {% else %}
+            <p class="text-muted mb-0">No hay información de VirusTotal para este análisis.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Detecciones específicas</span>
+        </div>
+        <div class="card-body small">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <div class="text-muted">Macros</div>
+              <div>
+                {% if analysis.macro_detected == 'yes' %}
+                  <span class="badge bg-warning text-dark">Sospechosas</span>
+                {% elif analysis.macro_detected == 'no' %}
+                  <span class="badge bg-success">No detectadas</span>
+                {% else %}
+                  <span class="badge bg-secondary">Desconocido</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted">Esteganografía</div>
+              <div>
+                {% if analysis.stego_detected == 'possible' %}
+                  <span class="badge bg-warning text-dark">Posible</span>
+                {% elif analysis.stego_detected == 'no' %}
+                  <span class="badge bg-success">No detectada</span>
+                {% else %}
+                  <span class="badge bg-secondary">Desconocido</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted">Audio</div>
+              <div>
+                {% if audio_info %}
+                  <span class="badge bg-primary">Metadatos disponibles</span>
+                {% else %}
+                  <span class="badge bg-secondary">Sin datos</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Metadatos adicionales</span>
+        </div>
+        <div class="card-body small">
+          {% if additional_meta and additional_meta|length > 0 %}
+            <dl class="row mb-0">
+              {% for key, value in additional_meta.items() %}
+              <dt class="col-sm-3 text-muted">{{ key }}</dt>
+              <dd class="col-sm-9 mb-1">
+                {% if value is mapping or value is sequence and not value is string %}
+                  <code class="small">{{ value }}</code>
+                {% else %}
+                  {{ value }}
+                {% endif %}
+              </dd>
+              {% endfor %}
+            </dl>
+          {% else %}
+            <p class="text-muted mb-0">No se han registrado metadatos adicionales para este archivo.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if audio_info and audio_info is mapping %}
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Metadatos de audio</span>
+        </div>
+        <div class="card-body small">
+          <dl class="row mb-0">
+            {% for key, value in audio_info.items() %}
+            <dt class="col-sm-3 text-muted">{{ key }}</dt>
+            <dd class="col-sm-9 mb-1">{{ value }}</dd>
+            {% endfor %}
+          </dl>
+        </div>
+      </div>
+      {% elif audio_info %}
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Metadatos de audio</span>
+        </div>
+        <div class="card-body small">
+          <pre class="small bg-black bg-opacity-25 p-2 rounded" style="max-height: 220px; overflow:auto; white-space:pre-wrap;">{{ audio_info }}</pre>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Columna derecha: alertas relacionadas y versión de motor -->
+    <div class="col-lg-4">
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Alertas relacionadas</span>
+        </div>
+        <div class="card-body small p-0">
+          {% if alerts %}
+          <ul class="list-group list-group-flush">
+            {% for alert in alerts %}
+            <li class="list-group-item bg-dark border-secondary small">
+              <div class="d-flex align-items-start">
+                <div class="me-2 mt-1">
+                  <span class="badge rounded-circle bg-{% if alert.severity == 'danger' %}danger{% elif alert.severity == 'warning' %}warning text-dark{% else %}secondary{% endif %}">!</span>
+                </div>
+                <div class="flex-grow-1">
+                  <div class="d-flex justify-content-between">
+                    <span class="fw-semibold text-truncate">{{ alert.title }}</span>
+                    <span class="text-muted ms-2 small">{{ alert.created_at }}</span>
+                  </div>
+                  <div class="text-muted small">
+                    {{ alert.description }}
+                  </div>
+                </div>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <div class="p-3 text-muted small">No hay alertas asociadas a este análisis.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card bg-dark text-light">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Información del motor</span>
+        </div>
+        <div class="card-body small">
+          <div class="mb-2">
+            <div class="text-muted">Versión del motor</div>
+            <div>{{ analysis.engine_version or 'N/D' }}</div>
+          </div>
+          <div class="mb-2">
+            <div class="text-muted">Versión de reglas</div>
+            <div>{{ analysis.ruleset_version or 'N/D' }}</div>
+          </div>
+          <div class="mb-0">
+            <div class="text-muted">ID de análisis</div>
+            <div>#{{ analysis.id }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Aquí podríamos añadir en el futuro interacciones extra
+// (copiar hashes, colapsar/expandir secciones, etc.)
+</script>
+{% endblock %}

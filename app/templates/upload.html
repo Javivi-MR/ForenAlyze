@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}Subir fichero · ForenHub{% endblock %}
+
+{% block subnav %}
+<nav class="subnav">
+  <div class="container-fluid">
+    <ul class="nav justify-content-center">
+      <li class="nav-item">
+        <a class="nav-link" href="/dashboard">Dashboard</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/files">Ficheros</a>
+      </li>
+      <li class="nav-item ms-auto">
+        <a class="nav-link active" href="/upload">Subir fichero</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="container py-5 dashboard-page">
+  <div class="row justify-content-center">
+    <div class="col-lg-7">
+      <div class="card bg-dark text-light shadow-sm border-0" style="max-width:480px;margin:auto;">
+        <div class="card-body d-flex flex-column align-items-center justify-content-center" style="min-height:320px;">
+          <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data" class="w-100">
+            <div id="drop-area" class="upload-drop-area mb-3 d-flex flex-column align-items-center justify-content-center">
+              <div class="upload-icon mb-3">
+                <!-- SVG de upload personalizado -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                  <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" />
+                  <path d="M7 9l5 -5l5 5" />
+                  <path d="M12 4l0 12" />
+                </svg>
+              </div>
+              <input type="file" id="file-input" name="file" class="d-none" required>
+              <button type="button" id="choose-file-btn" class="btn btn-outline-primary px-4 py-2 mb-2">
+                Seleccionar archivo
+              </button>
+              <div class="small text-muted mb-2 text-center">
+                Arrastra aquí tu archivo o haz clic en "Seleccionar archivo".<br>
+                <span class="text-light">Extensiones permitidas:</span> exe, pdf, doc(x), xls(x), imágenes, wav, mp3<br>
+                <span class="text-light">Tamaño máximo:</span> 100 MB
+              </div>
+            </div>
+            <div class="d-flex justify-content-center">
+              <button type="submit" class="btn btn-primary px-4" style="min-width:140px;">
+                Subir y analizar
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="text-center small text-muted mt-4" style="max-width:480px;margin:auto;">
+        <span class="fw-semibold">No subas información personal o confidencial.</span>
+        Los archivos serán analizados automáticamente y almacenados de forma segura.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.upload-drop-area {
+  border: 2px dashed #3b82f6;
+  border-radius: 12px;
+  background: #181f2a;
+  padding: 32px 0 24px 0;
+  transition: border-color 0.2s;
+  cursor: pointer;
+  min-height: 180px;
+  width: 100%;
+}
+.upload-drop-area.dragover {
+  border-color: #22c55e;
+  background: #23293a;
+}
+.upload-icon svg {
+  display: block;
+  margin: auto;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const dropArea = document.getElementById("drop-area");
+  const fileInput = document.getElementById("file-input");
+  const chooseBtn = document.getElementById("choose-file-btn");
+  const form = document.getElementById("upload-form");
+
+  // Botón "Seleccionar archivo"
+  chooseBtn.addEventListener("click", () => fileInput.click());
+
+  // Drag & drop
+  dropArea.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropArea.classList.add("dragover");
+  });
+  dropArea.addEventListener("dragleave", (e) => {
+    dropArea.classList.remove("dragover");
+  });
+  dropArea.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropArea.classList.remove("dragover");
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      fileInput.files = e.dataTransfer.files;
+      chooseBtn.textContent = e.dataTransfer.files[0].name;
+    }
+  });
+
+  // Mostrar nombre de fichero seleccionado
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files.length > 0) {
+      chooseBtn.textContent = fileInput.files[0].name;
+    } else {
+      chooseBtn.textContent = "Seleccionar archivo";
+    }
+  });
+
+  // Validación JS igual que antes
+  const MAX_FILE_SIZE = 100 * 1024 * 1024;
+  const ALLOWED_EXTENSIONS = [
+    "exe", "pdf", "doc", "docx", "xls", "xlsx",
+    "png", "jpg", "jpeg", "gif", "bmp", "wav", "mp3"
+  ];
+  form.addEventListener("submit", (e) => {
+    const file = fileInput.files[0];
+    if (!file) {
+      e.preventDefault();
+      Swal.fire({
+        icon: "error",
+        title: "Fichero no válido",
+        text: "Debes seleccionar un fichero para subir.",
+        background: "#181f2a",
+        color: "#e5e7eb",
+        confirmButtonColor: "#3b82f6",
+      });
+      return;
+    }
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      e.preventDefault();
+      Swal.fire({
+        icon: "error",
+        title: "Fichero no válido",
+        text: "El tipo de fichero seleccionado no está permitido.",
+        background: "#181f2a",
+        color: "#e5e7eb",
+        confirmButtonColor: "#3b82f6",
+      });
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      e.preventDefault();
+      Swal.fire({
+        icon: "error",
+        title: "Fichero demasiado grande",
+        text: "El fichero supera el tamaño máximo permitido de 100 MB.",
+        background: "#181f2a",
+        color: "#e5e7eb",
+        confirmButtonColor: "#3b82f6",
+      });
+      return;
+    }
+  });
+});
+</script>
+{% endblock %}

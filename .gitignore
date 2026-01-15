@@ -16,3 +16,6 @@ forenhub.db
 # Archivos de configuración de entorno
 .env
 .env.*
+
+# Archivos subidos
+/instance/uploads/*

@@ -4,3 +4,9 @@ Flask-WTF==1.1.1
 Flask-SQLAlchemy==3.0.5
 WTForms==3.1.2
 Werkzeug==2.3.7
+
+# Análisis y utilidades
+Pillow>=10.0.0        # metadatos de imagen / EXIF
+mutagen>=1.47.0       # análisis básico de audio
+yara-python>=4.3.0    # reglas YARA (requiere librerías de sistema)
+requests>=2.31.0      # integración con APIs externas (VirusTotal)

@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}Ficheros · ForenHub{% endblock %}
+
+{% block subnav %}
+<nav class="subnav">
+  <div class="container-fluid">
+    <ul class="nav">
+      <li class="nav-item">
+        <a class="nav-link" href="/dashboard">Dashboard</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link active" href="/files">Ficheros</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/analysis">Análisis</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/logs">Registros</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/storage">Almacenamiento</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 py-lg-4 dashboard-page">
+  <div class="row mb-3 align-items-center">
+    <div class="col">
+      <h1 class="h4 mb-0">Ficheros subidos</h1>
+      <p class="small text-muted mb-0">
+        Visor centralizado de todos los ficheros enviados a ForenHub.
+      </p>
+    </div>
+    <div class="col-auto">
+      <a href="/upload" class="btn btn-primary btn-sm">
+        Subir fichero
+      </a>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  <div class="card bg-dark text-light">
+    <div class="card-header border-0 d-flex justify-content-between align-items-center">
+      <span class="fw-semibold">Listado de ficheros</span>
+      <span class="small text-muted">
+        Total: {{ files|length if files is defined else 0 }}
+      </span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-dark table-hover table-sm align-middle mb-0">
+        <thead class="small text-uppercase text-muted">
+          <tr>
+            <th>Nombre</th>
+            <th>Tipo</th>
+            <th>Tamaño</th>
+            <th>Estado</th>
+            <th>Subido</th>
+            <th class="text-center">Info</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if files and files|length > 0 %}
+            {% for f in files %}
+            <tr>
+              <td class="text-truncate" style="max-width: 240px;">
+                {{ f.filename_original }}
+              </td>
+              <td class="small">
+                {{ f.file_type or f.mime_type }}
+              </td>
+              <td class="small">
+                {{ f.size_human }}
+              </td>
+              <td>
+                {% set v = f.final_verdict %}
+                <span class="badge
+                  {% if v == 'clean' %} bg-success
+                  {% elif v == 'suspicious' %} bg-warning text-dark
+                  {% elif v == 'malicious' %} bg-danger
+                  {% elif v == 'critical' %} bg-danger text-light
+                  {% else %} bg-secondary{% endif %}">
+                  {{ v or 'pendiente' }}
+                </span>
+              </td>
+              <td class="small text-nowrap">
+                {{ f.upload_date }}
+              </td>
+              <td class="text-center">
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm file-meta-btn"
+                  data-bs-toggle="modal"
+                  data-bs-target="#fileMetaModal"
+                  data-filename="{{ f.filename_original }}"
+                  data-meta='{{ {
+                    "Nombre original": f.filename_original,
+                    "Nombre almacenado": f.filename_stored,
+                    "Tipo": f.file_type or f.mime_type,
+                    "Tamaño": f.size_human,
+                    "MIME": f.mime_type,
+                    "SHA256": f.sha256,
+                    "MD5": f.md5,
+                    "SHA1": f.sha1,
+                    "Veredicto": f.final_verdict,
+                    "Usuario": f.user_username if f.user_username is defined else "N/D",
+                    "Subido": f.upload_date,
+                    "Ruta almacenamiento": f.storage_path
+                  } | tojson }}'
+                >
+                  ℹ
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="6" class="text-center text-muted py-4">
+                No hay ficheros subidos todavía.<br>
+                <a href="/upload" class="btn btn-primary btn-sm mt-3">Subir mi primer fichero</a>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Modal de metadatos -->
+  <div class="modal fade" id="fileMetaModal" tabindex="-1" aria-labelledby="fileMetaModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content bg-dark text-light border-secondary">
+        <div class="modal-header border-secondary">
+          <h5 class="modal-title" id="fileMetaModalLabel">Metadatos del fichero</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <dl class="row small mb-0" id="file-meta-content">
+            <!-- Rellenado por JS -->
+          </dl>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/files.js') }}"></script>
+{% endblock %}

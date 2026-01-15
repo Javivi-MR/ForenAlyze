@@ -1,8 +1,283 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
+
+{% block title %}Dashboard · ForenHub{% endblock %}
+
+{% block subnav %}
+<nav class="subnav">
+  <div class="container-fluid">
+    <ul class="nav">
+      <li class="nav-item">
+        <a class="nav-link active" href="/dashboard">Dashboard</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/files">Ficheros</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/analysis">Análisis</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/logs">Registros</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/storage">Almacenamiento</a>
+      </li>
+      <!-- Enlace directo a la sección de subida -->
+      <li class="nav-item ms-auto">
+        <a class="nav-link" href="/upload">Subir fichero</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+{% endblock %}
+
 {% block content %}
-<div class="container mt-5">
-  <h2>Bienvenido, {{ user.username }}!</h2>
-  <p>Este es tu dashboard forense.</p>
-  <a href="{{ url_for('auth.logout') }}" class="btn btn-secondary">Cerrar sesión</a>
+<div class="container-fluid py-3 py-lg-4 dashboard-page">
+  <div class="row g-3 g-lg-4">
+    <!-- Columna izquierda: Alertas + Registros rápidos -->
+    <div class="col-lg-3">
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Alertas Recientes</span>
+        </div>
+        <div class="card-body p-0">
+          {% if alerts %}
+          <ul class="list-group list-group-flush">
+            {% for alert in alerts %}
+            <li class="list-group-item bg-dark border-secondary small">
+              <div class="d-flex align-items-start">
+                <div class="me-2 mt-1">
+                  <span class="badge rounded-circle bg-{% if alert.severity == 'danger' %}danger{% elif alert.severity == 'warning' %}warning text-dark{% else %}secondary{% endif %}">!</span>
+                </div>
+                <div class="flex-grow-1">
+                  <div class="d-flex justify-content-between">
+                    <span class="fw-semibold text-truncate">{{ alert.title }}</span>
+                    <span class="text-muted ms-2">
+                      {{ alert.created_at|default('') }}
+                    </span>
+                  </div>
+                  {% if alert.file %}
+                  <div class="text-muted text-truncate">
+                    {{ alert.file.filename_original }}
+                  </div>
+                  {% endif %}
+                  <div class="text-muted small">
+                    {{ alert.description }}
+                  </div>
+                </div>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <div class="p-3 text-muted small">Sin alertas recientes.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card bg-dark text-light">
+        <div class="card-header border-0">
+          <span class="fw-semibold">Registros Rápidos</span>
+        </div>
+        <div class="card-body d-grid gap-2">
+          <a href="/logs" class="btn btn-outline-secondary btn-sm text-start">Últimos Registros</a>
+          <a href="/logs" class="btn btn-outline-secondary btn-sm text-start">Todos los Registros</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Columna derecha: KPIs + gráficas + tabla -->
+    <div class="col-lg-9">
+      <!-- KPIs principales -->
+      <div class="row g-3 mb-2">
+        <div class="col-sm-6 col-xl-3">
+          <div class="card bg-dark text-light h-100">
+            <div class="card-body">
+              <div class="text-muted small">Total Subidas</div>
+              <div class="d-flex justify-content-between align-items-baseline mt-1">
+                <div class="fs-3 fw-semibold">
+                  {{ summary.total_uploads or 0 }}
+                </div>
+                <div class="text-success small">
+                  +{{ summary.uploads_today or 0 }} hoy
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-sm-6 col-xl-3">
+          <div class="card bg-dark text-light h-100">
+            <div class="card-body">
+              <div class="text-muted small">Archivos Analizados</div>
+              <div class="d-flex justify-content-between align-items-baseline mt-1">
+                <div class="fs-3 fw-semibold">
+                  {{ summary.analyzed_total or 0 }}
+                </div>
+                <div class="text-warning small">
+                  {{ summary.pending_analysis or 0 }} pendientes
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-sm-6 col-xl-3">
+          <div class="card bg-dark text-light h-100">
+            <div class="card-body">
+              <div class="text-muted small">Maliciosos (últ. 24h)</div>
+              <div class="d-flex justify-content-between align-items-baseline mt-1">
+                <div class="fs-3 fw-semibold text-danger">
+                  {{ summary.malicious_24h or 0 }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-sm-6 col-xl-3">
+          <div class="card bg-dark text-light h-100">
+            <div class="card-body">
+              <div class="text-muted small">Archivos Críticos</div>
+              <div class="d-flex justify-content-between align-items-baseline mt-1">
+                <div class="fs-3 fw-semibold text-warning">
+                  {{ summary.critical_count or 0 }}
+                </div>
+              </div>
+              <div class="mt-3">
+                <div class="d-flex justify-content-between small text-muted mb-1">
+                  <span>Almacenamiento</span>
+                  <span>
+                    {{ summary.storage_used_mb or 0 }} MB /
+                    {{ summary.storage_quota_mb or 0 }} MB
+                  </span>
+                </div>
+                <div class="progress progress-sm bg-secondary-subtle" style="height: 6px;">
+                  <div
+                    class="progress-bar bg-success"
+                    role="progressbar"
+                    style="width: {{ summary.storage_used_pct or 0 }}%;"
+                    aria-valuenow="{{ summary.storage_used_pct or 0 }}"
+                    aria-valuemin="0"
+                    aria-valuemax="100">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gráficas -->
+      <div class="row g-3 mb-3">
+        <div class="col-xl-8">
+          <div class="card bg-dark text-light mb-3">
+            <div class="card-header border-0 d-flex justify-content-between align-items-center">
+              <span class="fw-semibold">Detecciones en los Últimos 7 Días</span>
+            </div>
+            <div class="card-body">
+              <canvas id="chart-detections-7d" height="120"></canvas>
+            </div>
+          </div>
+
+          <div class="card bg-dark text-light">
+            <div class="card-header border-0 d-flex justify-content-between align-items-center">
+              <span class="fw-semibold">Detecciones por Fuente</span>
+            </div>
+            <div class="card-body">
+              <canvas id="chart-detections-source" height="120"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-xl-4">
+          <div class="card bg-dark text-light h-100">
+            <div class="card-header border-0 d-flex justify-content-between align-items-center">
+              <span class="fw-semibold">Tipos de Archivos Analizados</span>
+            </div>
+            <div class="card-body">
+              <canvas id="chart-file-types" height="200"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabla de últimos archivos analizados -->
+      <div class="card bg-dark text-light">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Últimos Archivos Analizados</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-dark table-hover table-sm align-middle mb-0">
+            <thead class="small text-uppercase text-muted">
+              <tr>
+                <th>Fecha</th>
+                <th>Archivo</th>
+                <th>Tipo</th>
+                <th>Tamaño</th>
+                <th>SHA256</th>
+                <th>Estado</th>
+                <th class="text-end">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in recent_files %}
+              <tr>
+                <td class="small text-nowrap">
+                  {{ item.analyzed_at or item.upload_date }}
+                </td>
+                <td class="text-truncate" style="max-width: 200px;">
+                  {{ item.filename_original }}
+                </td>
+                <td class="small">
+                  {{ item.file_type or item.mime_type }}
+                </td>
+                <td class="small">
+                  {{ item.size_human }}
+                </td>
+                <td class="small text-truncate" style="max-width: 220px;">
+                  {{ item.sha256 }}
+                </td>
+                <td>
+                  {% set v = item.final_verdict %}
+                  <span class="badge
+                    {% if v == 'clean' %} bg-success
+                    {% elif v == 'suspicious' %} bg-warning text-dark
+                    {% elif v == 'malicious' %} bg-danger
+                    {% elif v == 'critical' %} bg-danger text-light
+                    {% else %} bg-secondary{% endif %}">
+                    {{ v or 'N/D' }}
+                  </span>
+                </td>
+                <td class="text-end">
+                  <div class="btn-group btn-group-sm">
+                    <a href="/files/{{ item.id }}" class="btn btn-outline-secondary">Ver</a>
+                    {% if item.analysis_id %}
+                    <a href="/analysis/{{ item.analysis_id }}/report" class="btn btn-outline-secondary">Informe</a>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="7" class="text-center text-muted py-4">
+                  No hay análisis recientes.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Datos iniciales para Chart.js generados en el backend
+  window.FORENHUB_DASHBOARD_DATA = {{ dashboard_data | tojson }};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}

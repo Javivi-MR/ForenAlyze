@@ -3,47 +3,86 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ForenHub</title>
+    <title>{% block title %}ForenHub{% endblock %}</title>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- AOS Animate On Scroll CSS -->
     <link href="https://cdn.jsdelivr.net/npm/aos@2.3.4/dist/aos.css" rel="stylesheet">
+    {% block extra_css %}{% endblock %}
   </head>
-  <body class="d-flex flex-column min-vh-100">
+  <body class="d-flex flex-column min-vh-100 bg-body-dark text-light">
     <!-- Header -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
       <div class="container-fluid">
-        <a class="navbar-brand fw-bold d-flex align-items-center gap-2 fs-3" href="/">
+        <a class="navbar-brand fw-bold d-flex align-items-center gap-2 fs-3" href="/dashboard">
           <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo ForenHub" width="40" height="40" class="d-inline-block align-text-top filter-white logo-anim">
           ForenHub
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
           <span class="navbar-toggler-icon"></span>
         </button>
+
         <div class="collapse navbar-collapse" id="navbarNav">
-          <ul class="navbar-nav ms-auto gap-3">
+          <ul class="navbar-nav ms-auto align-items-center gap-3">
             <li class="nav-item">
               <a class="nav-link" href="/">Home</a>
             </li>
-            {% if current_user.is_authenticated %}
+
             <li class="nav-item">
-              <a class="nav-link" href="/auth/logout">Logout</a>
+              <a class="nav-link" href="/dashboard">Dashboard</a>
+            </li>
+
+            <li class="nav-item">
+              <a class="nav-link" href="/about">About</a>
+            </li>
+
+            {% if current_user.is_authenticated %}
+            <!-- Campanita con rectángulo rojo para número de avisos -->
+            <li class="nav-item nav-bell">
+              <span class="nav-link position-relative p-0">
+                <img
+                  src="{{ url_for('static', filename='notification.svg') }}"
+                  alt="Notificaciones"
+                  class="bell-icon"
+                >
+                {% set notif_count = current_user.notifications or 0 %}
+                {% if notif_count > 0 %}
+                  <span class="bell-badge">
+                    {{ notif_count }}
+                  </span>
+                {% endif %}
+              </span>
+            </li>
+
+            <!-- Menú de usuario con avatar circular + nombre + dropdown -->
+            <li class="nav-item dropdown user-dropdown">
+              <a class="nav-link d-flex align-items-center gap-2 dropdown-toggle" href="#" id="userMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <img
+                  src="{{ current_user.image_url or url_for('static', filename='default_avatar.png') }}"
+                  alt="Usuario"
+                  class="user-avatar"
+                >
+                <span>{{ current_user.username }}</span>
+              </a>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenu">
+                <!-- Ajusta la URL cuando tengas la vista de edición de usuario -->
+                <li><a class="dropdown-item" href="#">Editar usuario</a></li>
+                <li><a class="dropdown-item" href="/auth/logout">Logout</a></li>
+              </ul>
             </li>
             {% else %}
             <li class="nav-item">
               <a class="nav-link" href="/auth/login">Login</a>
             </li>
             {% endif %}
-            <li class="nav-item">
-              <a class="nav-link" href="/dashboard">Dashboard</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="/about">About</a>
-            </li>
           </ul>
+
+          {# Subir fichero se gestionará dentro del dashboard, no en el header principal #}
         </div>
       </div>
     </nav>
+
+    {% block subnav %}{% endblock %}
 
     <main class="flex-fill">
       {% block content %}{% endblock %}
@@ -55,6 +94,81 @@
     </footer>
 
     <style>
+      body.bg-body-dark {
+        background-color: #020617;
+        color: #e5e7eb;
+      }
+
+      a {
+        color: #60a5fa;
+      }
+      a:hover {
+        color: #93c5fd;
+      }
+
+      /* Aumentar contraste de textos apagados en modo oscuro */
+      .text-muted,
+      .text-secondary {
+        color: #9ca3af !important;
+      }
+
+      /* Botones outline en oscuro: mayor contraste */
+      .btn-outline-secondary {
+        color: #e5e7eb;
+        border-color: #4b5563;
+      }
+      .btn-outline-secondary:hover,
+      .btn-outline-secondary:focus {
+        color: #e5e7eb;
+        background-color: #111827;
+        border-color: #9ca3af;
+      }
+
+      /* Componentes principales en modo oscuro */
+      .card {
+        background-color: #020617;
+        border-color: #111827;
+        color: #e5e7eb;
+      }
+      .card-header,
+      .card-footer {
+        border-color: #111827;
+      }
+
+      .table {
+        color: #e5e7eb;
+        background-color: transparent;
+      }
+      .table thead th {
+        border-color: #111827;
+        color: #9ca3af;
+      }
+      .table tbody tr {
+        background-color: #020617;
+        border-color: #111827;
+      }
+
+      .list-group-item {
+        background-color: #020617;
+        border-color: #111827;
+        color: #e5e7eb;
+      }
+
+      .form-control,
+      .form-select,
+      .form-check-input {
+        background-color: #020617;
+        border-color: #374151;
+        color: #e5e7eb;
+      }
+      .form-control:focus,
+      .form-select:focus {
+        background-color: #020617;
+        border-color: #60a5fa;
+        color: #e5e7eb;
+        box-shadow: 0 0 0 0.1rem rgba(37, 99, 235, 0.5);    
+      }
+
       .filter-white {
         filter: brightness(0) invert(1);
       }
@@ -69,6 +183,184 @@
       .logo-anim:hover {
         transform: rotate(-12deg) scale(1.12);
       }
+
+      /* Submenú horizontal del dashboard */
+      .subnav {
+        background-color: #111827;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+      }
+      .subnav .nav-link {
+        color: rgba(255,255,255,0.55);
+        padding: 0.75rem 1.2rem;
+        font-size: 0.95rem;
+      }
+      .subnav .nav-link.active {
+        color: #ffffff;
+        border-bottom: 2px solid #0d6efd;
+      }
+
+      /* Campanita + badge rojo rectangular */
+      .nav-bell .bell-icon {
+        width: 22px;
+        height: 22px;
+        display: inline-block;
+      }
+      .nav-bell .bell-badge {
+        position: absolute;
+        top: -0.3rem;
+        right: -0.6rem;
+        background-color: #dc3545;
+        color: #fff;
+        border-radius: 0.25rem;
+        padding: 0 0.25rem;
+        font-size: 0.7rem;
+        min-width: 1.1rem;
+        text-align: center;
+      }
+
+      /* Avatar circular */
+      .user-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        object-fit: cover;
+      }
+
+      /* Quitar la flecha de Bootstrap */
+      .user-dropdown .dropdown-toggle::after {
+        display: none;
+      }
+
+      /* Dropdown usuario */
+      .user-dropdown {
+        position: relative;
+      }
+
+      .user-dropdown .dropdown-menu {
+        display: block;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        margin-top: 0;
+        width: 100%;
+        min-width: 0;
+        font-size: 0.9rem;
+        padding: 0.25rem 0;
+        border-radius: 0.5rem;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.18);
+        background-color: #343a40;
+        border: 1px solid #23272b;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform-origin: top;
+        transform: translateY(4px) scaleY(0.96);
+        transition:
+          opacity 0.16s ease-out,
+          transform 0.16s ease-out,
+          visibility 0.16s ease-out;
+      }
+
+      .user-dropdown .dropdown-item {
+        color: rgba(255, 255, 255, 0.55);
+      }
+      .user-dropdown .dropdown-item:hover {
+        background-color: #23272b;
+        color: rgba(255, 255, 255, 0.75);
+      }
+
+      @media (hover: hover) {
+        .user-dropdown:hover .dropdown-menu,
+        .user-dropdown .dropdown-menu:hover {
+          opacity: 1;
+          visibility: visible;
+          pointer-events: auto;
+          transform: translateY(0) scaleY(1);
+        }
+      }
+
+      /* ===== FAQ / Acordeón en modo oscuro ===== */
+      .accordion {
+        --bs-accordion-bg: transparent;
+        --bs-accordion-border-color: #111827;
+        --bs-accordion-color: #e5e7eb;
+      }
+
+      .accordion-item {
+        background-color: transparent;
+        border-color: #111827;
+      }
+
+      .accordion-button {
+        background-color: #020617;
+        color: #e5e7eb;
+      }
+
+      .accordion-button:not(.collapsed) {
+        background-color: #020617;      /* evitamos el fondo azul */
+        color: #e5e7eb;
+        box-shadow: 0 0 0 1px #0d6efd;  /* sólo borde azul sutil */
+        border-bottom-color: #111827;
+      }
+
+      .accordion-button:focus {
+        box-shadow: 0 0 0 0.12rem rgba(37, 99, 235, 0.6);
+        border-color: #0d6efd;
+      }
+
+      .accordion-body {
+        background-color: #020617;
+        color: #e5e7eb;
+      }
+
+      /* ============================
+         Animaciones dashboard (fade-up)
+         ============================ */
+      @keyframes fh-fade-up {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* Animación por defecto para tarjetas dentro del dashboard */
+      .dashboard-page .card {
+        opacity: 0;
+        transform: translateY(10px);
+        animation: fh-fade-up 0.55s ease-out forwards;
+      }
+
+      /* Pequeño “stagger” por orden de aparición */
+      .dashboard-page .card:nth-of-type(1) {
+        animation-delay: 0.05s;
+      }
+      .dashboard-page .card:nth-of-type(2) {
+        animation-delay: 0.10s;
+      }
+      .dashboard-page .card:nth-of-type(3) {
+        animation-delay: 0.15s;
+      }
+      .dashboard-page .card:nth-of-type(4) {
+        animation-delay: 0.20s;
+      }
+      .dashboard-page .card:nth-of-type(5) {
+        animation-delay: 0.25s;
+      }
+      .dashboard-page .card:nth-of-type(6) {
+        animation-delay: 0.30s;
+      }
+
+      /* Tabla de últimos archivos analizados */
+      .dashboard-page .table-responsive {
+        opacity: 0;
+        transform: translateY(10px);
+        animation: fh-fade-up 0.55s ease-out forwards;
+        animation-delay: 0.30s;
+      }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <!-- AOS Animate On Scroll JS -->
@@ -76,5 +368,6 @@
     <script>
       AOS.init({ once: true, duration: 700, offset: 60 });
     </script>
+    {% block extra_js %}{% endblock %}
   </body>
 </html>
