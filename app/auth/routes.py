@@ -25,7 +25,7 @@ def login():
         user = User.query.filter_by(username=form.username.data).first()
         if user and check_password_hash(user.password, form.password.data):
             login_user(user)
-            return redirect(url_for('dashboard.dashboard'))
+            return redirect(url_for('dashboard.dashboard_index'))
         flash('Usuario o contraseña incorrectos')
     return render_template('login.html', form=form)
 
