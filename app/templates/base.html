@@ -37,9 +37,9 @@
             </li>
 
             {% if current_user.is_authenticated %}
-            <!-- Campanita con rectángulo rojo para número de avisos -->
+            <!-- Bell with counter + notifications dropdown -->
             <li class="nav-item nav-bell">
-              <span class="nav-link position-relative p-0">
+              <div class="nav-link position-relative p-0 bell-toggle">
                 <img
                   src="{{ url_for('static', filename='notification.svg') }}"
                   alt="Notificaciones"
@@ -51,22 +51,96 @@
                     {{ notif_count }}
                   </span>
                 {% endif %}
-              </span>
+              </div>
+
+              {# Compact list of unread notifications for the current user #}
+              {% set unread_alerts = current_user.alerts
+                  | selectattr('is_read', 'equalto', False)
+                  | sort(attribute='created_at', reverse=True)
+                  | list %}
+
+              <div class="notifications-menu">
+                <div class="notifications-header">
+                  Notifications
+                  {% if unread_alerts|length > 0 %}
+                    <span class="badge bg-primary-soft">
+                      {{ unread_alerts|length }} unread
+                    </span>
+                  {% else %}
+                    <span class="badge bg-secondary-soft">Up to date</span>
+                  {% endif %}
+                </div>
+
+                {% if unread_alerts|length == 0 %}
+                  <div class="notifications-empty">
+                    You have no pending notifications.
+                  </div>
+                {% else %}
+                  <ul class="notifications-list">
+                    {% for alert in unread_alerts[:6] %}
+                      <li class="notification-item notification-{{ alert.severity }}">
+                        {% if alert.analysis_id %}
+                          <a href="{{ url_for('dashboard.analysis_report', analysis_id=alert.analysis_id) }}">
+                            <div class="notification-title">
+                              {{ alert.title or 'Report available' }}
+                            </div>
+                            <div class="notification-body">
+                              {% if alert.description %}
+                                {{ alert.description | truncate(90, True, '…') }}
+                              {% else %}
+                                Report for the related file is ready for review.
+                              {% endif %}
+                            </div>
+                          </a>
+                        {% else %}
+                          <div class="notification-title">
+                            {{ alert.title or 'Notice' }}
+                          </div>
+                          {% if alert.description %}
+                            <div class="notification-body">
+                              {{ alert.description | truncate(90, True, '…') }}
+                            </div>
+                          {% endif %}
+                        {% endif %}
+                      </li>
+                    {% endfor %}
+                  </ul>
+
+                  {% if unread_alerts|length > 6 %}
+                    <div class="notifications-footer">
+                      + {{ unread_alerts|length - 6 }} additional alerts
+                    </div>
+                  {% endif %}
+                {% endif %}
+
+                <form
+                  method="post"
+                  action="{{ url_for('dashboard.notifications_mark_all_read') }}"
+                  class="notifications-actions"
+                >
+                  <button
+                    type="submit"
+                    class="btn btn-sm btn-outline-secondary w-100 notifications-mark-all-btn"
+                  >
+                      Mark all as read
+                  </button>
+                </form>
+              </div>
             </li>
 
-            <!-- Menú de usuario con avatar circular + nombre + dropdown -->
+            <!-- User menu with avatar + name + dropdown -->
             <li class="nav-item dropdown user-dropdown">
               <a class="nav-link d-flex align-items-center gap-2 dropdown-toggle" href="#" id="userMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                 <img
                   src="{{ current_user.image_url or url_for('static', filename='default_avatar.png') }}"
-                  alt="Usuario"
+                  alt="User"
                   class="user-avatar"
                 >
                 <span>{{ current_user.username }}</span>
               </a>
               <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenu">
-                <!-- Ajusta la URL cuando tengas la vista de edición de usuario -->
-                <li><a class="dropdown-item" href="#">Editar usuario</a></li>
+                <!-- Adjust URL when you have the user edit view -->
+                <li><a class="dropdown-item" href="#">Edit profile</a></li>
                 <li><a class="dropdown-item" href="/auth/logout">Logout</a></li>
               </ul>
             </li>
@@ -90,7 +164,7 @@
 
     <!-- Footer -->
     <footer class="bg-dark text-light text-center py-3 mt-auto">
-      <small>ForenHub &copy; 2026 &middot; Proyecto TFM UCA</small>
+      <small>ForenHub &copy; 2026 &middot; Master thesis project UCA</small>
     </footer>
 
     <style>
@@ -216,6 +290,134 @@
         font-size: 0.7rem;
         min-width: 1.1rem;
         text-align: center;
+      }
+
+      /* Dropdown de notificaciones en la cabecera */
+      .nav-bell {
+        position: relative;
+      }
+
+      .notifications-menu {
+        position: absolute;
+        top: 120%;
+        right: 0;
+        width: 320px;
+        max-height: 380px;
+        background-color: #111827;
+        border-radius: 0.75rem;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+        border: 1px solid #1f2937;
+        padding: 0.5rem 0;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform-origin: top right;
+        transform: translateY(6px) scale(0.97);
+        transition:
+          opacity 0.16s ease-out,
+          transform 0.16s ease-out,
+          visibility 0.16s ease-out;
+        z-index: 1040;
+      }
+
+      .notifications-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.35rem 0.9rem 0.4rem;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: rgba(249, 250, 251, 0.72);
+        border-bottom: 1px solid rgba(31, 41, 55, 0.9);
+      }
+
+      .bg-primary-soft {
+        background-color: rgba(37, 99, 235, 0.18);
+        color: #bfdbfe;
+      }
+
+      .bg-secondary-soft {
+        background-color: rgba(75, 85, 99, 0.35);
+        color: #d1d5db;
+      }
+
+      .notifications-empty {
+        padding: 0.75rem 0.9rem;
+        font-size: 0.85rem;
+        color: rgba(156, 163, 175, 0.95);
+      }
+
+      .notifications-list {
+        list-style: none;
+        margin: 0;
+        padding: 0.25rem 0;
+        max-height: 260px;
+        overflow-y: auto;
+      }
+
+      .notification-item a {
+        display: block;
+        padding: 0.55rem 0.9rem;
+        text-decoration: none;
+        color: inherit;
+      }
+
+      .notification-item a:hover {
+        background-color: #030712;
+      }
+
+      .notification-title {
+        font-size: 0.86rem;
+        font-weight: 500;
+        margin-bottom: 0.15rem;
+      }
+
+      .notification-body {
+        font-size: 0.78rem;
+        color: #9ca3af;
+      }
+
+      .notification-info .notification-title {
+        color: #e5e7eb;
+      }
+
+      .notification-warning .notification-title {
+        color: #fbbf24;
+      }
+
+      .notification-danger .notification-title,
+      .notification-critical .notification-title {
+        color: #f97373;
+      }
+
+      .notifications-footer {
+        padding: 0.4rem 0.9rem 0.15rem;
+        font-size: 0.78rem;
+        color: #6b7280;
+        border-top: 1px dashed rgba(31, 41, 55, 0.9);
+      }
+
+      .notifications-actions {
+        padding: 0.4rem 0.9rem 0.3rem;
+        border-top: 1px solid rgba(31, 41, 55, 0.9);
+      }
+
+      .notifications-mark-all-btn {
+        font-size: 0.78rem;
+        padding-top: 0.25rem;
+        padding-bottom: 0.25rem;
+        border-radius: 999px;
+      }
+
+      @media (hover: hover) {
+        .nav-bell:hover .notifications-menu,
+        .nav-bell .notifications-menu:hover {
+          opacity: 1;
+          visibility: visible;
+          pointer-events: auto;
+          transform: translateY(0) scale(1);
+        }
       }
 
       /* Avatar circular */

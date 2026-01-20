@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Análisis · ForenHub{% endblock %}
+{% block title %}Analyses · ForenHub{% endblock %}
 
 {% block subnav %}
 <nav class="subnav">
@@ -10,16 +10,16 @@
         <a class="nav-link" href="/dashboard">Dashboard</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" href="/files">Ficheros</a>
+        <a class="nav-link" href="/files">Files</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link active" href="/analysis">Análisis</a>
+        <a class="nav-link active" href="/analysis">Analyses</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" href="/logs">Registros</a>
+        <a class="nav-link" href="/logs">Logs</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" href="/storage">Almacenamiento</a>
+        <a class="nav-link" href="/storage">Storage</a>
       </li>
     </ul>
   </div>
@@ -30,16 +30,16 @@
 <div class="container-fluid py-3 py-lg-4 dashboard-page">
   <div class="row mb-3 align-items-center">
     <div class="col">
-      <h1 class="h4 mb-0">Análisis realizados</h1>
+      <h1 class="h4 mb-0">Completed analyses</h1>
       <p class="small text-muted mb-0">
-        Histórico de análisis ejecutados sobre los ficheros subidos a ForenHub.
+        Historical record of analyses executed on files uploaded to ForenHub.
       </p>
     </div>
   </div>
 
   <div class="card bg-dark text-light">
     <div class="card-header border-0 d-flex justify-content-between align-items-center">
-      <span class="fw-semibold">Listado de análisis</span>
+      <span class="fw-semibold">Analysis list</span>
       <span class="small text-muted">
         Total: {{ analyses|length if analyses is defined else 0 }}
       </span>
@@ -48,15 +48,15 @@
       <table class="table table-dark table-hover table-sm align-middle mb-0" id="analysis-table">
         <thead class="small text-uppercase text-muted">
           <tr>
-            <th>Fecha</th>
-            <th>Archivo</th>
-            <th>Tipo</th>
-            <th>Tamaño</th>
+            <th>Date</th>
+            <th>File</th>
+            <th>Type</th>
+            <th>Size</th>
             <th>SHA256</th>
-            <th>Estado</th>
-            <th>Detecciones</th>
-            <th>Usuario</th>
-            <th class="text-end">Informe</th>
+            <th>Status</th>
+            <th>Detections</th>
+            <th>User</th>
+            <th class="text-end">Report</th>
           </tr>
         </thead>
         <tbody>
@@ -100,7 +100,7 @@
                   <span class="badge bg-warning text-dark me-1">Macros</span>
                 {% endif %}
                 {% if a.stego_detected == 'possible' %}
-                  <span class="badge bg-warning text-dark me-1">Estego</span>
+                  <span class="badge bg-warning text-dark me-1">Stego</span>
                 {% endif %}
                 {% if a.has_audio %}
                   <span class="badge bg-primary me-1">Audio</span>
@@ -110,14 +110,14 @@
                 {{ a.user_username }}
               </td>
               <td class="text-end">
-                <a href="/analysis/{{ a.id }}/report" class="btn btn-outline-secondary btn-sm">Ver informe</a>
+                <a href="/analysis/{{ a.id }}/report" class="btn btn-outline-secondary btn-sm">View report</a>
               </td>
             </tr>
             {% endfor %}
           {% else %}
             <tr>
               <td colspan="9" class="text-center text-muted py-4">
-                No hay análisis disponibles todavía.
+                There are no analyses available yet.
               </td>
             </tr>
           {% endif %}
@@ -130,7 +130,7 @@
 
 {% block extra_js %}
 <script>
-// Búsqueda rápida en el listado de análisis (por nombre de archivo o hash)
-// Se puede ampliar en el futuro con filtros más avanzados.
+// Quick search in the analysis list (by filename or hash)
+// Can be extended in the future with more advanced filters.
 </script>
 {% endblock %}

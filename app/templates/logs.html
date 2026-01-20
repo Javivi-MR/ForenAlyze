@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+
+{% block title %}Logs · ForenHub{% endblock %}
+
+{% block subnav %}
+<nav class="subnav">
+  <div class="container-fluid">
+    <ul class="nav">
+      <li class="nav-item">
+        <a class="nav-link" href="/dashboard">Dashboard</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/files">Files</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/analysis">Analyses</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link active" href="/logs">Logs</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/storage">Storage</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 py-lg-4 dashboard-page">
+  <div class="row mb-3 align-items-center">
+    <div class="col">
+      <h1 class="h4 mb-0">Activity logs</h1>
+      <p class="small text-muted mb-0">
+        Centralised audit trail for key actions performed in ForenHub.
+      </p>
+    </div>
+  </div>
+
+  <div class="card bg-dark text-light">
+    <div class="card-header border-0 d-flex justify-content-between align-items-center">
+      <span class="fw-semibold">Logs</span>
+      {% if pagination %}
+      <span class="small text-muted">
+        Page {{ pagination.page }} of {{ pagination.pages or 1 }}
+      </span>
+      {% endif %}
+    </div>
+    <div class="table-responsive">
+      <table class="table table-dark table-hover table-sm align-middle mb-0">
+        <thead class="small text-uppercase text-muted">
+          <tr>
+            <th class="text-nowrap">Timestamp</th>
+            <th>User</th>
+            <th>Action</th>
+            <th>Resource</th>
+            <th>Status</th>
+            <th class="text-nowrap">IP</th>
+            <th class="text-nowrap">Message</th>
+            <th class="text-center">Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if logs and logs|length > 0 %}
+            {% for entry in logs %}
+            <tr>
+              <td class="small text-nowrap">{{ entry.created_at }}</td>
+              <td class="small">{{ entry.username or 'N/A' }}</td>
+              <td class="small">{{ entry.action }}</td>
+              <td class="small text-truncate" style="max-width: 160px;">
+                {{ entry.resource or '-' }}
+              </td>
+              <td class="small">
+                {% set st = entry.status or 'info' %}
+                <span class="badge
+                  {% if st == 'success' %} bg-success
+                  {% elif st in ['failed', 'error'] %} bg-danger
+                  {% elif st in ['warning', 'warn'] %} bg-warning text-dark
+                  {% else %} bg-secondary{% endif %}">
+                  {{ st }}
+                </span>
+              </td>
+              <td class="small text-nowrap">{{ entry.ip_address or '-' }}</td>
+              <td class="small text-truncate" style="max-width: 260px;">
+                {{ entry.message or '-' }}
+              </td>
+              <td class="text-center">
+                {% if entry.details_raw %}
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm log-details-btn"
+                  data-bs-toggle="modal"
+                  data-bs-target="#logDetailsModal"
+                  data-log='{{ {
+                    "id": entry.id,
+                    "created_at": entry.created_at,
+                    "username": entry.username,
+                    "action": entry.action,
+                    "resource": entry.resource,
+                    "status": entry.status,
+                    "ip_address": entry.ip_address,
+                    "message": entry.message,
+                    "details": entry.details,
+                  } | tojson }}'
+                >
+                  ℹ
+                </button>
+                {% else %}
+                  <span class="text-muted small">-</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">
+                There are no logs recorded yet.
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pagination and (pagination.pages or 1) > 1 %}
+    <div class="card-footer border-0 d-flex justify-content-between align-items-center">
+      <div class="small text-muted">
+        Showing {{ logs|length }} entries
+      </div>
+      <nav aria-label="Logs pagination">
+        <ul class="pagination pagination-sm mb-0">
+          <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ pagination.prev_num }}" tabindex="-1">Previous</a>
+          </li>
+          <li class="page-item disabled">
+            <span class="page-link">Page {{ pagination.page }} / {{ pagination.pages }}</span>
+          </li>
+          <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ pagination.next_num }}">Next</a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Modal de detalles de log -->
+  <div class="modal fade" id="logDetailsModal" tabindex="-1" aria-labelledby="logDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content bg-dark text-light border-secondary">
+        <div class="modal-header border-secondary">
+          <h5 class="modal-title" id="logDetailsModalLabel">Log details</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <dl class="row small mb-0" id="log-details-content">
+            <!-- Filled by JS -->
+          </dl>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const modal = document.getElementById('logDetailsModal');
+    if (!modal) return;
+
+    modal.addEventListener('show.bs.modal', function (event) {
+      const button = event.relatedTarget;
+      if (!button) return;
+
+      const raw = button.getAttribute('data-log');
+      if (!raw) return;
+
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch (e) {
+        data = null;
+      }
+
+      const container = document.getElementById('log-details-content');
+      if (!container) return;
+
+      container.innerHTML = '';
+
+      if (!data) {
+        container.innerHTML = '<div class="text-muted">No details available.</div>';
+        return;
+      }
+
+      const fields = {
+        'ID': data.id,
+        'Timestamp': data.created_at,
+        'User': data.username || 'N/A',
+        'Action': data.action,
+        'Resource': data.resource || '-',
+        'Status': data.status || '-',
+        'IP address': data.ip_address || '-',
+        'Message': data.message || '-',
+      };
+
+      Object.entries(fields).forEach(([label, value]) => {
+        const dt = document.createElement('dt');
+        dt.className = 'col-sm-3 text-muted';
+        dt.textContent = label;
+
+        const dd = document.createElement('dd');
+        dd.className = 'col-sm-9';
+        dd.textContent = value == null ? '-' : String(value);
+
+        container.appendChild(dt);
+        container.appendChild(dd);
+      });
+
+      if (data.details) {
+        const dt = document.createElement('dt');
+        dt.className = 'col-sm-3 text-muted';
+        dt.textContent = 'Details (JSON)';
+
+        const dd = document.createElement('dd');
+        dd.className = 'col-sm-9';
+
+        const pre = document.createElement('pre');
+        pre.className = 'small mb-0';
+        pre.textContent = JSON.stringify(data.details, null, 2);
+
+        dd.appendChild(pre);
+
+        container.appendChild(dt);
+        container.appendChild(dd);
+      }
+    });
+  });
+</script>
+{% endblock %}

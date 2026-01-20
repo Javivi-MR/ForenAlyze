@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Subir fichero · ForenHub{% endblock %}
+{% block title %}Upload file · ForenHub{% endblock %}
 
 {% block subnav %}
 <nav class="subnav">
@@ -10,10 +10,10 @@
         <a class="nav-link" href="/dashboard">Dashboard</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" href="/files">Ficheros</a>
+        <a class="nav-link" href="/files">Files</a>
       </li>
       <li class="nav-item ms-auto">
-        <a class="nav-link active" href="/upload">Subir fichero</a>
+        <a class="nav-link active" href="/upload">Upload file</a>
       </li>
     </ul>
   </div>
@@ -39,25 +39,25 @@
               </div>
               <input type="file" id="file-input" name="file" class="d-none" required>
               <button type="button" id="choose-file-btn" class="btn btn-outline-primary px-4 py-2 mb-2">
-                Seleccionar archivo
+                Choose file
               </button>
               <div class="small text-muted mb-2 text-center">
-                Arrastra aquí tu archivo o haz clic en "Seleccionar archivo".<br>
-                <span class="text-light">Extensiones permitidas:</span> exe, pdf, doc(x), xls(x), imágenes, wav, mp3<br>
-                <span class="text-light">Tamaño máximo:</span> 100 MB
+                Drag and drop your file here or click "Choose file".<br>
+                <span class="text-light">Allowed extensions:</span> exe, pdf, doc(x), xls(x), images, wav, mp3<br>
+                <span class="text-light">Maximum size:</span> 100 MB
               </div>
             </div>
             <div class="d-flex justify-content-center">
               <button type="submit" class="btn btn-primary px-4" style="min-width:140px;">
-                Subir y analizar
+                Upload and analyse
               </button>
             </div>
           </form>
         </div>
       </div>
       <div class="text-center small text-muted mt-4" style="max-width:480px;margin:auto;">
-        <span class="fw-semibold">No subas información personal o confidencial.</span>
-        Los archivos serán analizados automáticamente y almacenados de forma segura.
+        <span class="fw-semibold">Do not upload personal or confidential information.</span>
+        Files will be analysed automatically and stored securely.
       </div>
     </div>
   </div>
@@ -96,7 +96,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const chooseBtn = document.getElementById("choose-file-btn");
   const form = document.getElementById("upload-form");
 
-  // Botón "Seleccionar archivo"
+  // "Choose file" button
   chooseBtn.addEventListener("click", () => fileInput.click());
 
   // Drag & drop
@@ -116,16 +116,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Mostrar nombre de fichero seleccionado
+  // Show selected file name
   fileInput.addEventListener("change", () => {
     if (fileInput.files.length > 0) {
       chooseBtn.textContent = fileInput.files[0].name;
     } else {
-      chooseBtn.textContent = "Seleccionar archivo";
+      chooseBtn.textContent = "Choose file";
     }
   });
 
-  // Validación JS igual que antes
+  // Client-side validation
   const MAX_FILE_SIZE = 100 * 1024 * 1024;
   const ALLOWED_EXTENSIONS = [
     "exe", "pdf", "doc", "docx", "xls", "xlsx",
@@ -137,8 +137,8 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       Swal.fire({
         icon: "error",
-        title: "Fichero no válido",
-        text: "Debes seleccionar un fichero para subir.",
+        title: "Invalid file",
+        text: "You must select a file to upload.",
         background: "#181f2a",
         color: "#e5e7eb",
         confirmButtonColor: "#3b82f6",
@@ -150,8 +150,8 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       Swal.fire({
         icon: "error",
-        title: "Fichero no válido",
-        text: "El tipo de fichero seleccionado no está permitido.",
+        title: "Invalid file",
+        text: "The selected file type is not allowed.",
         background: "#181f2a",
         color: "#e5e7eb",
         confirmButtonColor: "#3b82f6",
@@ -162,8 +162,8 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       Swal.fire({
         icon: "error",
-        title: "Fichero demasiado grande",
-        text: "El fichero supera el tamaño máximo permitido de 100 MB.",
+        title: "File too large",
+        text: "The file exceeds the maximum allowed size of 100 MB.",
         background: "#181f2a",
         color: "#e5e7eb",
         confirmButtonColor: "#3b82f6",

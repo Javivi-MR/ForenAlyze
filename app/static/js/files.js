@@ -7,7 +7,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   buttons.forEach((btn) => {
     btn.addEventListener("click", () => {
-      const filename = btn.getAttribute("data-filename") || "Metadatos del fichero";
+      const filename = btn.getAttribute("data-filename") || "File metadata";
       const raw = btn.getAttribute("data-meta") || "{}";
 
       let meta;
@@ -35,7 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!metaContainer.children.length) {
         const p = document.createElement("p");
         p.className = "small text-muted mb-0";
-        p.textContent = "No hay metadatos disponibles para este fichero.";
+        p.textContent = "No metadata is available for this file.";
         metaContainer.appendChild(p);
       }
     });

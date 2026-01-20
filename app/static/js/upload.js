@@ -23,7 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const showError = (message) => {
     Swal.fire({
       icon: "error",
-      title: "Fichero no válido",
+      title: "Invalid file",
       text: message,
       background: "#020617",
       color: "#e5e7eb",
@@ -39,7 +39,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!file) {
       e.preventDefault();
-      showError("Debes seleccionar un fichero para subir.");
+      showError("You must select a file to upload.");
       return;
     }
 
@@ -47,17 +47,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
       e.preventDefault();
       showError(
-        "El tipo de fichero seleccionado no está permitido. " +
-          "Formatos permitidos: .exe, .pdf, .doc(x), .xls(x), imágenes y .wav/.mp3."
+        "The selected file type is not allowed. " +
+          "Allowed formats: .exe, .pdf, .doc(x), .xls(x), images and .wav/.mp3."
       );
       return;
     }
 
     if (file.size > MAX_FILE_SIZE) {
       e.preventDefault();
-      showError("El fichero supera el tamaño máximo permitido de 100 MB.");
+      showError("The file exceeds the maximum allowed size of 100 MB.");
       return;
     }
-    // Si todo es correcto, dejamos que el formulario se envíe normalmente.
+    // If everything is correct, let the form submit normally.
   });
 });

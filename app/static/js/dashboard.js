@@ -16,7 +16,7 @@
 
   const byId = (id) => document.getElementById(id);
 
-  // Línea: detecciones últimos 7 días
+  // Line chart: detections in the last 7 days
   const lineEl = byId("chart-detections-7d");
   if (lineEl && data.timeseries_7d) {
     const t = data.timeseries_7d;
@@ -26,7 +26,7 @@
         labels: t.labels,
         datasets: [
           {
-            label: "Limpios",
+            label: "Clean",
             data: t.clean,
             borderColor: "#22c55e",
             backgroundColor: "rgba(34,197,94,0.2)",
@@ -35,7 +35,7 @@
             pointRadius: 2,
           },
           {
-            label: "Sospechosos",
+            label: "Suspicious",
             data: t.suspicious,
             borderColor: "#eab308",
             backgroundColor: "rgba(234,179,8,0.15)",
@@ -44,7 +44,7 @@
             pointRadius: 2,
           },
           {
-            label: "Maliciosos",
+            label: "Malicious",
             data: t.malicious,
             borderColor: "#ef4444",
             backgroundColor: "rgba(239,68,68,0.18)",
@@ -75,7 +75,7 @@
     });
   }
 
-  // Doughnut: tipos de archivo
+  // Doughnut: file types
   const typesEl = byId("chart-file-types");
   if (typesEl && data.file_types) {
     const f = data.file_types;
@@ -108,7 +108,7 @@
     });
   }
 
-  // Barras apiladas: detecciones por fuente
+  // Stacked bar: detections by source
   const srcEl = byId("chart-detections-source");
   if (srcEl && data.detections_source) {
     const s = data.detections_source;
@@ -118,17 +118,17 @@
         labels: s.labels,
         datasets: [
           {
-            label: "Limpio",
+            label: "Clean",
             data: s.clean,
             backgroundColor: "#22c55e",
           },
           {
-            label: "Sospechoso",
+            label: "Suspicious",
             data: s.suspicious,
             backgroundColor: "#eab308",
           },
           {
-            label: "Malicioso / Crítico",
+            label: "Malicious / critical",
             data: s.malicious,
             backgroundColor: "#ef4444",
           },

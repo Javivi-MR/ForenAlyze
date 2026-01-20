@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Editar usuario</h2>
+<h2>Edit user</h2>
 <form method="post">
-  <label for="username">Nombre de usuario:</label>
+  <label for="username">Username:</label>
   <input type="text" name="username" value="{{ user.username }}" required>
-  <label for="image_url">URL de imagen de perfil:</label>
+  <label for="image_url">Profile image URL:</label>
   <input type="url" name="image_url" value="{{ user.image_url }}">
-  <button type="submit">Guardar cambios</button>
+  <button type="submit">Save changes</button>
 </form>
 {% endblock %}

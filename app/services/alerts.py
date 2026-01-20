@@ -8,9 +8,9 @@ MALICIOUS_DAILY_THRESHOLD = 10
 
 
 def create_alerts_for_analysis(analysis: Analysis):
-    """Genera alertas asociadas a un análisis recién completado.
+    """Generate alerts associated with a freshly completed analysis.
 
-    Debe llamarse con la sesión activa (sin hacer commit dentro).
+    Must be called with an active session (no commit inside).
     """
 
     file_obj = analysis.file
@@ -18,7 +18,7 @@ def create_alerts_for_analysis(analysis: Analysis):
 
     alerts: list[Alert] = []
 
-    # Malware / crítico
+    # Malware / critical
     if analysis.final_verdict in ("malicious", "critical"):
         alerts.append(
             Alert(
@@ -26,15 +26,15 @@ def create_alerts_for_analysis(analysis: Analysis):
                 file_id=analysis.file_id,
                 analysis_id=analysis.id,
                 severity="danger",
-                title="Malware detectado",
+                title="Malware detected",
                 description=analysis.antivirus_result
-                or "Detección maliciosa en análisis automático.",
+                or "Malicious detection in automatic analysis.",
                 is_read=False,
                 created_at=datetime.utcnow(),
             )
         )
 
-    # Macros sospechosas
+    # Suspicious macros
     if getattr(analysis, "macro_detected", "no") == "yes":
         alerts.append(
             Alert(
@@ -42,29 +42,32 @@ def create_alerts_for_analysis(analysis: Analysis):
                 file_id=analysis.file_id,
                 analysis_id=analysis.id,
                 severity="warning",
-                title="Macros sospechosas",
-                description="Se han detectado macros en el documento.",
+                title="Suspicious macros",
+                description="Macros have been detected in the document.",
                 is_read=False,
                 created_at=datetime.utcnow(),
             )
         )
 
-    # Esteganografía
-    if getattr(analysis, "stego_detected", "no") == "possible":
+    # Steganography
+    stego_status = getattr(analysis, "stego_detected", "no")
+    if stego_status in {"possible", "yes"}:
         alerts.append(
             Alert(
                 user_id=user_id,
                 file_id=analysis.file_id,
                 analysis_id=analysis.id,
-                severity="warning",
-                title="Posible esteganografía",
-                description="Se han detectado indicios de esteganografía en el archivo.",
+                severity="warning" if stego_status == "possible" else "danger",
+                title="Possible steganography" if stego_status == "possible" else "Steganography detected",
+                description="Possible steganography has been detected in the file."
+                if stego_status == "possible"
+                else "Hidden content or strong steganography indicators have been found in this file.",
                 is_read=False,
                 created_at=datetime.utcnow(),
             )
         )
 
-    # Umbral diario de archivos maliciosos
+    # Daily threshold of malicious files
     today = date.today()
     malicious_today = (
         Analysis.query.filter(
@@ -81,15 +84,38 @@ def create_alerts_for_analysis(analysis: Analysis):
                 file_id=analysis.file_id,
                 analysis_id=analysis.id,
                 severity="danger",
-                title="Umbral diario de archivos maliciosos superado",
+                title="Daily malicious files threshold exceeded",
                 description=(
-                    f"Se han detectado {malicious_today} archivos maliciosos en las "
-                    "últimas 24 horas."
+                    f"{malicious_today} malicious files have been detected in the "
+                    "last 24 hours."
                 ),
                 is_read=False,
                 created_at=datetime.utcnow(),
             )
         )
+
+    # Generic "report ready" notification for the user.
+    # This allows the bell to show new reports even when
+    # they are not malicious.
+    if file_obj is not None:
+        filename = file_obj.filename_original or "file"
+    else:
+        filename = "file"
+
+    alerts.append(
+        Alert(
+            user_id=user_id,
+            file_id=analysis.file_id,
+            analysis_id=analysis.id,
+            severity="info",
+            title="Report ready",
+            description=(
+                f"The report for file \"{filename}\" is ready for review."
+            ),
+            is_read=False,
+            created_at=datetime.utcnow(),
+        )
+    )
 
     for a in alerts:
         db.session.add(a)

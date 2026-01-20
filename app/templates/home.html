@@ -4,8 +4,8 @@
   <div class="row align-items-center mb-5" data-aos="fade-up">
     <div class="col-md-6 text-center text-md-start">
       <h1 class="display-4 fw-bold mb-3">ForenHub</h1>
-      <p class="lead mb-4">Plataforma web forense para análisis automatizado de archivos sospechosos.<br>Sube, analiza y consulta resultados de forma sencilla y segura.</p>
-      <a href="/dashboard" class="btn btn-primary btn-lg">Ir a mi Dashboard</a>
+      <p class="lead mb-4">Web-based forensic platform for automated analysis of suspicious files.<br>Upload, analyse and review results easily and securely.</p>
+      <a href="/dashboard" class="btn btn-primary btn-lg">Go to my dashboard</a>
     </div>
     <div class="col-md-6 text-center">
       <img src="{{ url_for('static', filename='tool.png') }}" class="img-fluid rounded shadow" alt="Forensic Analysis" style="max-height:320px;object-fit:cover;" data-aos="zoom-in">
@@ -15,29 +15,29 @@
   <hr class="my-5">
 
   <section>
-    <h2 class="mb-4 text-center" data-aos="fade-up">¿Qué puedes hacer con ForenHub?</h2>
+    <h2 class="mb-4 text-center" data-aos="fade-up">What can you do with ForenHub?</h2>
     <div class="row g-4">
       <div class="col-md-4" data-aos="fade-up" data-aos-delay="100">
         <div class="card h-100 shadow-sm">
           <div class="card-body">
-            <h5 class="card-title">Subida y gestión de archivos</h5>
-            <p class="card-text">Carga archivos sospechosos y gestiona tu historial de análisis de forma segura y privada.</p>
+            <h5 class="card-title">File upload and management</h5>
+            <p class="card-text">Upload suspicious files and manage your analysis history in a secure and private way.</p>
           </div>
         </div>
       </div>
       <div class="col-md-4" data-aos="fade-up" data-aos-delay="200">
         <div class="card h-100 shadow-sm">
           <div class="card-body">
-            <h5 class="card-title">Análisis forense automático</h5>
-            <p class="card-text">Obtén hashes, tipo MIME, metadatos, reglas YARA, análisis antivirus y más, todo integrado y automatizado.</p>
+            <h5 class="card-title">Automated forensic analysis</h5>
+            <p class="card-text">Get hashes, MIME type, metadata, YARA rules, antivirus analysis and more, all integrated and automated.</p>
           </div>
         </div>
       </div>
       <div class="col-md-4" data-aos="fade-up" data-aos-delay="300">
         <div class="card h-100 shadow-sm">
           <div class="card-body">
-            <h5 class="card-title">Resultados claros y trazabilidad</h5>
-            <p class="card-text">Visualiza resultados consolidados, exporta informes y mantén la trazabilidad de tus análisis.</p>
+            <h5 class="card-title">Clear results and traceability</h5>
+            <p class="card-text">Visualise consolidated results, export reports and keep full traceability of your analyses.</p>
           </div>
         </div>
       </div>
@@ -47,65 +47,65 @@
   <hr class="my-5">
 
   <section>
-    <h2 class="mb-4 text-center" data-aos="fade-up">Preguntas Frecuentes (FAQ)</h2>
+    <h2 class="mb-4 text-center" data-aos="fade-up">Frequently Asked Questions (FAQ)</h2>
     <div class="accordion" id="faqAccordion">
       <div class="accordion-item" data-aos="fade-up" data-aos-delay="100">
         <h2 class="accordion-header" id="faq1">
           <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapse1" aria-expanded="true" aria-controls="collapse1">
-            ¿Qué tipos de análisis realiza ForenHub?
+            What types of analysis does ForenHub perform?
           </button>
         </h2>
         <div id="collapse1" class="accordion-collapse collapse show" aria-labelledby="faq1" data-bs-parent="#faqAccordion">
           <div class="accordion-body">
-            ForenHub realiza análisis de hashes, tipo MIME, metadatos, reglas YARA, antivirus (ClamAV/VirusTotal), esteganografía y espectrogramas de audio.
+            ForenHub performs hash, MIME type and metadata extraction, YARA rule matching, antivirus checks (ClamAV/VirusTotal), steganography detection and audio spectrogram analysis.
           </div>
         </div>
       </div>
       <div class="accordion-item" data-aos="fade-up" data-aos-delay="200">
         <h2 class="accordion-header" id="faq2">
           <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse2" aria-expanded="false" aria-controls="collapse2">
-            ¿Quién puede acceder a los análisis?
+            Who can access the analyses?
           </button>
         </h2>
         <div id="collapse2" class="accordion-collapse collapse" aria-labelledby="faq2" data-bs-parent="#faqAccordion">
           <div class="accordion-body">
-            Solo los usuarios autenticados pueden subir archivos y consultar su historial de análisis. Cada usuario ve únicamente sus propios resultados.
+            Only authenticated users can upload files and view their analysis history. Each user only sees their own results.
           </div>
         </div>
       </div>
       <div class="accordion-item" data-aos="fade-up" data-aos-delay="300">
         <h2 class="accordion-header" id="faq3">
           <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse3" aria-expanded="false" aria-controls="collapse3">
-            ¿Qué herramientas forenses utiliza la plataforma?
+            Which forensic tools does the platform use?
           </button>
         </h2>
         <div id="collapse3" class="accordion-collapse collapse" aria-labelledby="faq3" data-bs-parent="#faqAccordion">
           <div class="accordion-body">
-            Se integran herramientas como ClamAV, VirusTotal, ExifTool, hachoir, stego-lsb, librosa y YARA, entre otras.
+            The platform integrates tools such as ClamAV, VirusTotal, ExifTool, hachoir, stego-lsb, librosa and YARA, among others.
           </div>
         </div>
       </div>
       <div class="accordion-item" data-aos="fade-up" data-aos-delay="400">
         <h2 class="accordion-header" id="faq4">
           <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse4" aria-expanded="false" aria-controls="collapse4">
-            ¿Puedo exportar los resultados?
+            Can I export the results?
           </button>
         </h2>
         <div id="collapse4" class="accordion-collapse collapse" aria-labelledby="faq4" data-bs-parent="#faqAccordion">
           <div class="accordion-body">
-            Sí, podrás exportar los resultados de tus análisis en diferentes formatos (PDF, CSV, etc.) en futuras versiones.
+            Yes, you will be able to export your analysis results in different formats (PDF, CSV, etc.) in future versions.
           </div>
         </div>
       </div>
       <div class="accordion-item" data-aos="fade-up" data-aos-delay="500">
         <h2 class="accordion-header" id="faq5">
           <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse5" aria-expanded="false" aria-controls="collapse5">
-            ¿Es seguro subir archivos a ForenHub?
+            Is it safe to upload files to ForenHub?
           </button>
         </h2>
         <div id="collapse5" class="accordion-collapse collapse" aria-labelledby="faq5" data-bs-parent="#faqAccordion">
           <div class="accordion-body">
-            Sí, los archivos se almacenan de forma aislada y solo accesibles para el usuario autenticado. Se recomienda no subir información sensible en entornos de producción.
+            Yes, files are stored in an isolated way and are only accessible to the authenticated user. As a general recommendation, avoid uploading highly sensitive information in production environments.
           </div>
         </div>
       </div>

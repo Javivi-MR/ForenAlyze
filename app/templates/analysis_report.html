@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Informe de análisis · ForenHub{% endblock %}
+{% block title %}Analysis report · ForenHub{% endblock %}
 
 {% block subnav %}
 <nav class="subnav">
@@ -10,16 +10,77 @@
         <a class="nav-link" href="/dashboard">Dashboard</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" href="/files">Ficheros</a>
+        <a class="nav-link" href="/files">Files</a>
+      </li>
+<script>
+// Steganography payload modal: fetch full payload and show it inline
+document.addEventListener('DOMContentLoaded', function () {
+  var modalEl = document.getElementById('stegoPayloadModal');
+  if (!modalEl) return;
+
+  var modalBody = modalEl.querySelector('.modal-body pre');
+  var modalTitle = modalEl.querySelector('.modal-title');
+  var copyBtn = modalEl.querySelector('[data-role="copy-payload"]');
+
+  var bsModal = new bootstrap.Modal(modalEl);
+
+  document.querySelectorAll('.stego-payload-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var url = btn.getAttribute('data-url');
+      var mode = btn.getAttribute('data-mode') || 'decoded';
+      var index = btn.getAttribute('data-index') || '0';
+
+      if (!url) return;
+
+      var fullUrl = url + '?mode=' + encodeURIComponent(mode) + '&index=' + encodeURIComponent(index);
+
+      // Limpia el contenido mientras se carga
+      modalTitle.textContent = 'Loading payload…';
+      modalBody.textContent = '';
+      bsModal.show();
+
+      fetch(fullUrl, { headers: { 'Accept': 'application/json' } })
+        .then(function (resp) { return resp.json(); })
+        .then(function (data) {
+          if (data.error) {
+            modalTitle.textContent = 'Steganography payload';
+            modalBody.textContent = data.error;
+            return;
+          }
+          modalTitle.textContent = data.label || 'Steganography payload';
+          modalBody.textContent = data.content || '';
+        })
+        .catch(function () {
+          modalTitle.textContent = 'Steganography payload';
+          modalBody.textContent = 'An error occurred while fetching the payload.';
+        });
+    });
+  });
+
+  if (copyBtn && modalBody) {
+    copyBtn.addEventListener('click', function () {
+      var text = modalBody.textContent || '';
+      if (!text) return;
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch(function () {});
+      } else {
+        // Fallback sencillo
+        var tmp = document.createElement('textarea');
+        tmp.value = text;
+        document.body.appendChild(tmp);
+        tmp.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(tmp);
+      }
+    });
+  }
+});
+</script>
+        <a class="nav-link" href="/logs">Logs</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link active" href="/analysis">Análisis</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link" href="/logs">Registros</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link" href="/storage">Almacenamiento</a>
+        <a class="nav-link" href="/storage">Storage</a>
       </li>
     </ul>
   </div>
@@ -29,18 +90,18 @@
 {% block content %}
 <div class="container-fluid py-3 py-lg-4 dashboard-page">
   <div class="row g-3 g-lg-4">
-    <!-- Columna izquierda: información principal -->
+    <!-- Left column: main information -->
     <div class="col-lg-8">
       <div class="card bg-dark text-light mb-3">
         <div class="card-header border-0 d-flex justify-content-between align-items-center">
           <div>
-            <div class="small text-muted">Archivo analizado</div>
+            <div class="small text-muted">Analyzed file</div>
             <h1 class="h5 mb-0 text-truncate" style="max-width: 480px;" title="{{ file_info.filename_original }}">
               {{ file_info.filename_original }}
             </h1>
           </div>
           <div class="text-end">
-            <div class="small text-muted mb-1">Veredicto</div>
+            <div class="small text-muted mb-1">Verdict</div>
             {% set v = analysis.final_verdict %}
             <span class="badge fs-6
               {% if v == 'clean' %} bg-success
@@ -55,11 +116,11 @@
         <div class="card-body">
           <div class="row small mb-3">
             <div class="col-md-6">
-              <div class="text-muted">Tipo / MIME</div>
+              <div class="text-muted">Type / MIME</div>
               <div>{{ file_info.file_type or file_info.mime_type or 'N/D' }}</div>
             </div>
             <div class="col-md-3">
-              <div class="text-muted">Tamaño</div>
+              <div class="text-muted">Size</div>
               <div>
                 {% if file_info.size %}
                   {{ (file_info.size / 1024 / 1024)|round(2) }} MB
@@ -69,22 +130,22 @@
               </div>
             </div>
             <div class="col-md-3">
-              <div class="text-muted">Usuario</div>
+              <div class="text-muted">User</div>
               <div>{{ user.username if user else 'N/D' }}</div>
             </div>
           </div>
 
           <div class="row small mb-3">
             <div class="col-md-4">
-              <div class="text-muted">Subido</div>
+              <div class="text-muted">Uploaded</div>
               <div>{{ file_info.upload_date or 'N/D' }}</div>
             </div>
             <div class="col-md-4">
-              <div class="text-muted">Analizado</div>
+              <div class="text-muted">Analyzed</div>
               <div>{{ analysis.analyzed_at or 'N/D' }}</div>
             </div>
             <div class="col-md-4">
-              <div class="text-muted">Ruta almacenamiento</div>
+              <div class="text-muted">Storage path</div>
               <div class="text-truncate" style="max-width: 260px;" title="{{ file_info.storage_path }}">
                 {{ file_info.storage_path or 'N/D' }}
               </div>
@@ -104,9 +165,9 @@
 
           <hr class="border-secondary">
 
-          <div class="small mb-1 text-muted">Resumen del análisis</div>
+          <div class="small mb-1 text-muted">Analysis summary</div>
           <p class="small mb-0">
-            {{ analysis.summary or 'No hay resumen disponible para este análisis.' }}
+            {{ analysis.summary or 'No summary is available for this analysis.' }}
           </p>
         </div>
       </div>
@@ -119,20 +180,62 @@
           <div class="row g-3">
             <div class="col-md-6">
               <h6 class="small text-muted text-uppercase">ClamAV / Antivirus</h6>
-              {% if antivirus_data %}
+              {% if clam_status or clam_detail %}
+                {% if clam_status %}
+                <div class="d-flex align-items-center mb-2">
+                  <span class="badge
+                    {% if clam_status == 'clean' %} bg-success
+                    {% elif clam_status == 'infected' %} bg-danger
+                    {% elif clam_status == 'not_available' %} bg-secondary
+                    {% elif clam_status == 'error' %} bg-warning text-dark
+                    {% else %} bg-secondary{% endif %}">
+                    {% if clam_status == 'clean' %}
+                      Clean
+                    {% elif clam_status == 'infected' %}
+                      Infected
+                    {% elif clam_status == 'not_available' %}
+                      Not available
+                    {% elif clam_status == 'error' %}
+                      Error
+                    {% elif clam_status == 'unknown' %}
+                      Unknown
+                    {% else %}
+                      {{ clam_status }}
+                    {% endif %}
+                  </span>
+                  {% if clam_message %}
+                    <span class="ms-2">{{ clam_message }}</span>
+                  {% endif %}
+                </div>
+                {% endif %}
+
+                {% if clam_detection %}
+                  <div class="small mb-1">
+                    <span class="text-muted">Detection:</span>
+                    <span class="fw-semibold">{{ clam_detection }}</span>
+                  </div>
+                {% endif %}
+
+                {% if clam_detail %}
+                <details class="small text-muted">
+                  <summary class="cursor-pointer">View technical details</summary>
+                  <pre class="small bg-black bg-opacity-25 p-2 rounded mt-1" style="max-height: 220px; overflow:auto; white-space:pre-wrap;">{{ clam_detail }}</pre>
+                </details>
+                {% endif %}
+              {% elif antivirus_data %}
                 <pre class="small bg-black bg-opacity-25 p-2 rounded" style="max-height: 220px; overflow:auto; white-space:pre-wrap;">{{ antivirus_data }}</pre>
               {% else %}
-                <p class="text-muted mb-0">Sin datos de antivirus.</p>
+                <p class="text-muted mb-0">No antivirus data available.</p>
               {% endif %}
             </div>
             <div class="col-md-6">
-              <h6 class="small text-muted text-uppercase">Reglas YARA</h6>
+              <h6 class="small text-muted text-uppercase">YARA rules</h6>
               {% if yara_matches and yara_matches|length > 0 %}
                 <ul class="list-unstyled small mb-0" style="max-height: 220px; overflow:auto;">
                   {% for m in yara_matches %}
                   <li class="mb-2">
-                    <div class="fw-semibold">{{ m.rule or 'Regla' }}</div>
-                    <div class="text-muted">Namespace: {{ m.namespace or 'N/D' }}</div>
+                    <div class="fw-semibold">{{ m.rule or 'Rule' }}</div>
+                    <div class="text-muted">Namespace: {{ m.namespace or 'N/A' }}</div>
                     {% if m.tags %}
                     <div class="text-muted">Tags:
                       {% for tag in m.tags %}
@@ -149,7 +252,7 @@
                   {% endfor %}
                 </ul>
               {% else %}
-                <p class="text-muted mb-0">No se han registrado coincidencias YARA.</p>
+                <p class="text-muted mb-0">No YARA matches have been recorded.</p>
               {% endif %}
             </div>
           </div>
@@ -188,9 +291,9 @@
 
             <div class="text-muted mb-2">
               {% if vt_total is not none and vt_positives is not none %}
-                Motores que detectan el archivo: <span class="fw-semibold">{{ vt_positives }}/{{ vt_total }}</span>
+                Engines that detect the file: <span class="fw-semibold">{{ vt_positives }}/{{ vt_total }}</span>
               {% elif vt_total is not none %}
-                Motores analizados: <span class="fw-semibold">{{ vt_total }}</span>
+                Engines analyzed: <span class="fw-semibold">{{ vt_total }}</span>
               {% endif %}
               {% if vt_data.status %}
                 <span class="ms-2">Estado: {{ vt_data.status }}</span>
@@ -199,26 +302,26 @@
 
             {% if file_info.sha256 %}
             <a href="https://www.virustotal.com/gui/file/{{ file_info.sha256 }}" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener noreferrer">
-              Ver detalle en VirusTotal
+              View details on VirusTotal
             </a>
             {% endif %}
           {% elif analysis.virustotal_result %}
-            <p class="mb-2">No se ha podido interpretar la respuesta de VirusTotal, se muestra el contenido bruto:</p>
+            <p class="mb-2">The response from VirusTotal could not be parsed; raw content is shown:</p>
             <pre class="small bg-black bg-opacity-25 p-2 rounded mb-2" style="max-height: 220px; overflow:auto; white-space:pre-wrap;">{{ analysis.virustotal_result }}</pre>
             {% if file_info.sha256 %}
             <a href="https://www.virustotal.com/gui/file/{{ file_info.sha256 }}" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener noreferrer">
-              Ver detalle en VirusTotal
+              View details on VirusTotal
             </a>
             {% endif %}
           {% else %}
-            <p class="text-muted mb-0">No hay información de VirusTotal para este análisis.</p>
+            <p class="text-muted mb-0">There is no VirusTotal information for this analysis.</p>
           {% endif %}
         </div>
       </div>
 
       <div class="card bg-dark text-light mb-3">
         <div class="card-header border-0 d-flex justify-content-between align-items-center">
-          <span class="fw-semibold">Detecciones específicas</span>
+          <span class="fw-semibold">Specific detections</span>
         </div>
         <div class="card-body small">
           <div class="row g-3">
@@ -226,23 +329,25 @@
               <div class="text-muted">Macros</div>
               <div>
                 {% if analysis.macro_detected == 'yes' %}
-                  <span class="badge bg-warning text-dark">Sospechosas</span>
+                  <span class="badge bg-warning text-dark">Suspicious</span>
                 {% elif analysis.macro_detected == 'no' %}
-                  <span class="badge bg-success">No detectadas</span>
+                  <span class="badge bg-success">Not detected</span>
                 {% else %}
-                  <span class="badge bg-secondary">Desconocido</span>
+                  <span class="badge bg-secondary">Unknown</span>
                 {% endif %}
               </div>
             </div>
             <div class="col-md-4">
-              <div class="text-muted">Esteganografía</div>
+              <div class="text-muted">Steganography</div>
               <div>
                 {% if analysis.stego_detected == 'possible' %}
-                  <span class="badge bg-warning text-dark">Posible</span>
+                  <span class="badge bg-warning text-dark">Possible</span>
+                {% elif analysis.stego_detected == 'yes' %}
+                  <span class="badge bg-danger">Detected</span>
                 {% elif analysis.stego_detected == 'no' %}
-                  <span class="badge bg-success">No detectada</span>
+                  <span class="badge bg-success">Not detected</span>
                 {% else %}
-                  <span class="badge bg-secondary">Desconocido</span>
+                  <span class="badge bg-secondary">Unknown</span>
                 {% endif %}
               </div>
             </div>
@@ -250,9 +355,9 @@
               <div class="text-muted">Audio</div>
               <div>
                 {% if audio_info %}
-                  <span class="badge bg-primary">Metadatos disponibles</span>
+                  <span class="badge bg-primary">Metadata available</span>
                 {% else %}
-                  <span class="badge bg-secondary">Sin datos</span>
+                  <span class="badge bg-secondary">No data</span>
                 {% endif %}
               </div>
             </div>
@@ -260,9 +365,181 @@
         </div>
       </div>
 
+      {#
+        Bloque dedicado a esteganografía y contenido oculto.
+        Sólo se muestra para tipos de fichero donde este análisis tiene
+        sentido (imágenes, audio, PDF).
+      #}
+      {% set mime = file_info.mime_type or '' %}
+      {% if mime.startswith('image/') or mime.startswith('audio/') or mime == 'application/pdf' %}
+      {% set stego_details = additional_meta.get('steganography') if additional_meta is mapping else None %}
       <div class="card bg-dark text-light mb-3">
         <div class="card-header border-0 d-flex justify-content-between align-items-center">
-          <span class="fw-semibold">Metadatos adicionales</span>
+          <div>
+            <span class="fw-semibold">Hidden content & steganography</span>
+            <div class="small text-muted">Deep inspection for hidden text, base64 payloads and LSB patterns</div>
+          </div>
+        </div>
+        <div class="card-body small">
+          {% if stego_details %}
+            <div class="mb-2">
+              {% if stego_details.status == 'found' %}
+                <span class="badge bg-danger">Hidden content detected</span>
+              {% elif stego_details.status == 'suspicious' %}
+                <span class="badge bg-warning text-dark">Suspicious patterns</span>
+              {% elif stego_details.status == 'not_found' %}
+                <span class="badge bg-success">No hidden content found</span>
+              {% else %}
+                <span class="badge bg-secondary">Analysis status: {{ stego_details.status }}</span>
+              {% endif %}
+
+              {% if stego_details.methods %}
+              <span class="ms-2 text-muted">Methods:</span>
+              {% for m in stego_details.methods %}
+                <span class="badge bg-secondary ms-1">{{ m }}</span>
+              {% endfor %}
+              {% endif %}
+            </div>
+
+            {% if stego_details.notes %}
+            <ul class="small text-muted mb-3">
+              {% for note in stego_details.notes %}
+              <li>{{ note }}</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+
+            {% if stego_details.messages and stego_details.messages|length > 0 %}
+            <div class="mb-3">
+              <h6 class="small text-muted text-uppercase mb-1">Extracted text candidates</h6>
+              <div class="border border-secondary rounded p-2 bg-black bg-opacity-25" style="max-height: 260px; overflow:auto;">
+                {% for msg in stego_details.messages %}
+                  <div class="mb-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <span class="badge bg-primary me-2">{{ msg.source or 'LSB' }}</span>
+                      <span class="text-muted small">{{ msg.length }} characters</span>
+                    </div>
+                    <pre class="small mb-0" style="white-space:pre-wrap;">{{ msg.preview }}</pre>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
+            {% if stego_details.base64 and stego_details.base64|length > 0 %}
+            <div>
+              <h6 class="small text-muted text-uppercase mb-1">Decoded base64 payloads</h6>
+              <div class="border border-secondary rounded p-2 bg-black bg-opacity-25" style="max-height: 260px; overflow:auto;">
+                {% for b in stego_details.base64 %}
+                  <div class="mb-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <span>
+                        <span class="badge bg-info text-dark me-1">{{ b.source or 'base64' }}</span>
+                        {% if b.decoded_type %}
+                          <span class="text-muted small">Type: {{ b.decoded_type }}</span>
+                        {% endif %}
+                      </span>
+                      {% if b.decoded_length is not none %}
+                        <span class="text-muted small">{{ b.decoded_length }} bytes</span>
+                      {% endif %}
+                    </div>
+                    {% if b.original_preview %}
+                    <details class="small mt-1">
+                      <summary class="cursor-pointer">Original base64 (preview)</summary>
+                      <pre class="small mt-1" style="white-space:pre-wrap;">{{ b.original_preview }}</pre>
+                      {% if b.original_full is defined and b.original_full and (b.original_full|length) > (b.original_preview|length) %}
+                      <div class="mt-1 text-muted small">Preview only. The full base64 payload is longer.</div>
+                      <button type="button"
+                              class="btn btn-sm btn-outline-secondary mt-1 stego-payload-btn"
+                              data-mode="original"
+                              data-index="{{ loop.index0 }}"
+                              data-url="{{ url_for('dashboard.stego_payload', analysis_id=analysis.id) }}">
+                        View full base64 payload
+                      </button>
+                      {% endif %}
+                    </details>
+                    {% endif %}
+                    {% if b.decoded_preview %}
+                    <details class="small mt-1">
+                      <summary class="cursor-pointer">Decoded content (preview)</summary>
+                      <pre class="small mt-1" style="white-space:pre-wrap;">{{ b.decoded_preview }}</pre>
+                      {% if b.decoded_length is not none and b.decoded_length > (b.decoded_preview|length) %}
+                      <div class="mt-1 text-muted small">Preview only. The decoded payload contains more content.</div>
+                      <button type="button"
+                              class="btn btn-sm btn-outline-secondary mt-1 stego-payload-btn"
+                              data-mode="decoded"
+                              data-index="{{ loop.index0 }}"
+                              data-url="{{ url_for('dashboard.stego_payload', analysis_id=analysis.id) }}">
+                        View full decoded payload
+                      </button>
+                      {% endif %}
+                    </details>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+
+            {% if (not stego_details.messages or stego_details.messages|length == 0) and (not stego_details.base64 or stego_details.base64|length == 0) %}
+              <p class="text-muted mb-0">No concrete hidden text or payloads have been extracted with the current heuristics for this file.</p>
+            {% endif %}
+          {% else %}
+            <p class="text-muted mb-0">This {{ mime }} file has been checked for hidden content (LSB text and base64 payloads) and no relevant indicators have been found.</p>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      {# Steganography deep analysis block (only when we have data) #}
+      {% if additional_meta and additional_meta.steganography is defined %}
+      {% set stego_meta = additional_meta.steganography %}
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Steganography analysis</span>
+        </div>
+        <div class="card-body small">
+          {% if stego_meta.lsb or stego_meta.embedded_base64 %}
+            {% if stego_meta.lsb %}
+            <div class="mb-3">
+              <h6 class="small text-uppercase text-muted mb-1">Image LSB extraction</h6>
+              <p class="mb-1">Hidden text has been recovered from the least significant bits of the image pixels.</p>
+              <p class="mb-1 text-muted">Hidden text preview (first 200 characters):</p>
+              <pre class="small bg-black bg-opacity-25 p-2 rounded" style="max-height: 220px; overflow:auto; white-space:pre-wrap;">{{ stego_meta.lsb.hidden_text_preview }}</pre>
+              {% if stego_meta.lsb.encoding == 'base64' and stego_meta.lsb.base64_decoded_preview %}
+              <p class="mb-1 mt-2 text-muted">Base64 decoded preview:</p>
+              <pre class="small bg-black bg-opacity-25 p-2 rounded" style="max-height: 220px; overflow:auto; white-space:pre-wrap;">{{ stego_meta.lsb.base64_decoded_preview }}</pre>
+              {% endif %}
+              <p class="mb-0 text-muted small">Approximate hidden text length: {{ stego_meta.lsb.hidden_text_length }} characters.</p>
+            </div>
+            {% endif %}
+
+            {% if stego_meta.embedded_base64 %}
+            <div>
+              <h6 class="small text-uppercase text-muted mb-1">Embedded base64 blobs</h6>
+              <p class="mb-2">The following base64-encoded segments have been found inside the file. They may correspond to embedded scripts or other payloads.</p>
+              <ul class="list-unstyled mb-0">
+                {% for segment in stego_meta.embedded_base64[:3] %}
+                <li class="mb-2">
+                  <div class="text-muted small mb-1">Offset {{ segment.offset }} · Length {{ segment.length }} bytes</div>
+                  <pre class="small bg-black bg-opacity-25 p-2 rounded" style="max-height: 160px; overflow:auto; white-space:pre-wrap;">{{ segment.decoded_preview }}</pre>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+          {% else %}
+            <p class="text-muted mb-0">
+              No hidden text has been detected with the current heuristics. This does not rule out more advanced steganography techniques.
+            </p>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Additional metadata</span>
         </div>
         <div class="card-body small">
           {% if additional_meta and additional_meta|length > 0 %}
@@ -279,7 +556,7 @@
               {% endfor %}
             </dl>
           {% else %}
-            <p class="text-muted mb-0">No se han registrado metadatos adicionales para este archivo.</p>
+            <p class="text-muted mb-0">No additional metadata has been recorded for this file.</p>
           {% endif %}
         </div>
       </div>
@@ -287,7 +564,7 @@
       {% if audio_info and audio_info is mapping %}
       <div class="card bg-dark text-light mb-3">
         <div class="card-header border-0 d-flex justify-content-between align-items-center">
-          <span class="fw-semibold">Metadatos de audio</span>
+          <span class="fw-semibold">Audio metadata</span>
         </div>
         <div class="card-body small">
           <dl class="row mb-0">
@@ -301,7 +578,7 @@
       {% elif audio_info %}
       <div class="card bg-dark text-light mb-3">
         <div class="card-header border-0 d-flex justify-content-between align-items-center">
-          <span class="fw-semibold">Metadatos de audio</span>
+          <span class="fw-semibold">Audio metadata</span>
         </div>
         <div class="card-body small">
           <pre class="small bg-black bg-opacity-25 p-2 rounded" style="max-height: 220px; overflow:auto; white-space:pre-wrap;">{{ audio_info }}</pre>
@@ -310,11 +587,11 @@
       {% endif %}
     </div>
 
-    <!-- Columna derecha: alertas relacionadas y versión de motor -->
+    <!-- Right column: related alerts and engine version -->
     <div class="col-lg-4">
       <div class="card bg-dark text-light mb-3">
         <div class="card-header border-0 d-flex justify-content-between align-items-center">
-          <span class="fw-semibold">Alertas relacionadas</span>
+          <span class="fw-semibold">Related alerts</span>
         </div>
         <div class="card-body small p-0">
           {% if alerts %}
@@ -339,28 +616,50 @@
             {% endfor %}
           </ul>
           {% else %}
-          <div class="p-3 text-muted small">No hay alertas asociadas a este análisis.</div>
+          <div class="p-3 text-muted small">There are no alerts associated with this analysis.</div>
           {% endif %}
         </div>
       </div>
 
       <div class="card bg-dark text-light">
         <div class="card-header border-0 d-flex justify-content-between align-items-center">
-          <span class="fw-semibold">Información del motor</span>
+          <span class="fw-semibold">Engine information</span>
         </div>
         <div class="card-body small">
           <div class="mb-2">
-            <div class="text-muted">Versión del motor</div>
+            <div class="text-muted">Engine version</div>
             <div>{{ analysis.engine_version or 'N/D' }}</div>
           </div>
           <div class="mb-2">
-            <div class="text-muted">Versión de reglas</div>
+            <div class="text-muted">Ruleset version</div>
             <div>{{ analysis.ruleset_version or 'N/D' }}</div>
           </div>
           <div class="mb-0">
-            <div class="text-muted">ID de análisis</div>
+            <div class="text-muted">Analysis ID</div>
             <div>#{{ analysis.id }}</div>
           </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal for full steganography payload -->
+<div class="modal fade" id="stegoPayloadModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content bg-dark text-light border-secondary">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">Steganography payload</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <pre class="small mb-0" style="max-height: 70vh; overflow:auto; white-space:pre-wrap;"></pre>
+      </div>
+      <div class="modal-footer border-secondary d-flex justify-content-between">
+        <span class="text-muted small">You can review and copy the full payload for further analysis.</span>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-role="copy-payload">Copy to clipboard</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
         </div>
       </div>
     </div>
@@ -370,7 +669,7 @@
 
 {% block extra_js %}
 <script>
-// Aquí podríamos añadir en el futuro interacciones extra
-// (copiar hashes, colapsar/expandir secciones, etc.)
+// Here we could add extra interactions in the future
+// (copy hashes, collapse/expand sections, etc.)
 </script>
 {% endblock %}

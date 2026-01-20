@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Ficheros · ForenHub{% endblock %}
+{% block title %}Files · ForenHub{% endblock %}
 
 {% block subnav %}
 <nav class="subnav">
@@ -10,16 +10,16 @@
         <a class="nav-link" href="/dashboard">Dashboard</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link active" href="/files">Ficheros</a>
+        <a class="nav-link active" href="/files">Files</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" href="/analysis">Análisis</a>
+        <a class="nav-link" href="/analysis">Analyses</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" href="/logs">Registros</a>
+        <a class="nav-link" href="/logs">Logs</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" href="/storage">Almacenamiento</a>
+        <a class="nav-link" href="/storage">Storage</a>
       </li>
     </ul>
   </div>
@@ -30,14 +30,14 @@
 <div class="container-fluid py-3 py-lg-4 dashboard-page">
   <div class="row mb-3 align-items-center">
     <div class="col">
-      <h1 class="h4 mb-0">Ficheros subidos</h1>
+      <h1 class="h4 mb-0">Uploaded files</h1>
       <p class="small text-muted mb-0">
-        Visor centralizado de todos los ficheros enviados a ForenHub.
+        Centralised view of all files sent to ForenHub.
       </p>
     </div>
     <div class="col-auto">
       <a href="/upload" class="btn btn-primary btn-sm">
-        Subir fichero
+        Upload file
       </a>
     </div>
   </div>
@@ -48,7 +48,7 @@
 
   <div class="card bg-dark text-light">
     <div class="card-header border-0 d-flex justify-content-between align-items-center">
-      <span class="fw-semibold">Listado de ficheros</span>
+      <span class="fw-semibold">Files list</span>
       <span class="small text-muted">
         Total: {{ files|length if files is defined else 0 }}
       </span>
@@ -57,11 +57,11 @@
       <table class="table table-dark table-hover table-sm align-middle mb-0">
         <thead class="small text-uppercase text-muted">
           <tr>
-            <th>Nombre</th>
-            <th>Tipo</th>
-            <th>Tamaño</th>
-            <th>Estado</th>
-            <th>Subido</th>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Size</th>
+            <th>Status</th>
+            <th>Uploaded</th>
             <th class="text-center">Info</th>
           </tr>
         </thead>
@@ -86,7 +86,7 @@
                   {% elif v == 'malicious' %} bg-danger
                   {% elif v == 'critical' %} bg-danger text-light
                   {% else %} bg-secondary{% endif %}">
-                  {{ v or 'pendiente' }}
+                  {{ v or 'pending' }}
                 </span>
               </td>
               <td class="small text-nowrap">
@@ -122,8 +122,8 @@
           {% else %}
             <tr>
               <td colspan="6" class="text-center text-muted py-4">
-                No hay ficheros subidos todavía.<br>
-                <a href="/upload" class="btn btn-primary btn-sm mt-3">Subir mi primer fichero</a>
+                There are no files uploaded yet.<br>
+                <a href="/upload" class="btn btn-primary btn-sm mt-3">Upload my first file</a>
               </td>
             </tr>
           {% endif %}
@@ -137,8 +137,8 @@
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
       <div class="modal-content bg-dark text-light border-secondary">
         <div class="modal-header border-secondary">
-          <h5 class="modal-title" id="fileMetaModalLabel">Metadatos del fichero</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          <h5 class="modal-title" id="fileMetaModalLabel">File metadata</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
           <dl class="row small mb-0" id="file-meta-content">
@@ -147,7 +147,7 @@
         </div>
         <div class="modal-footer border-secondary">
           <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
-            Cerrar
+            Close
           </button>
         </div>
       </div>

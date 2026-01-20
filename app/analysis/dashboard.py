@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 import json
 import os
 from pathlib import Path
+from threading import Thread
 from uuid import uuid4
 
 from flask import (
@@ -18,9 +19,10 @@ from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from app.extensions import db
-from app.models import Alert, Analysis, File, User
+from app.models import Alert, Analysis, File, Log, User
 from app.services.alerts import create_alerts_for_analysis
 from app.analysis.pipeline import analyze_file
+from app.services.logs import log_event
 
 
 dashboard_bp = Blueprint("dashboard", __name__)
@@ -31,12 +33,22 @@ dashboard_bp = Blueprint("dashboard", __name__)
 def dashboard_index():
 	data = build_dashboard_data(current_user)
 
+	# JSON-safe payload for frontend charts (no ORM objects)
+	dashboard_data_js = {
+		"summary": data["summary"],
+		"timeseries_7d": data["timeseries_7d"],
+		"file_types": data["file_types"],
+		"detections_source": data["detections_source"],
+		"recent_files": data["recent_files"],
+		"recent_alerts": data["recent_alerts_api"],
+	}
+
 	return render_template(
 		"dashboard.html",
 		summary=data["summary"],
 		alerts=data["recent_alerts"],
 		recent_files=data["recent_files"],
-		dashboard_data=data,
+		dashboard_data=dashboard_data_js,
 	)
 
 
@@ -44,7 +56,15 @@ def dashboard_index():
 @login_required
 def dashboard_overview():
 	data = build_dashboard_data(current_user)
-	return jsonify(data)
+	dashboard_data_js = {
+		"summary": data["summary"],
+		"timeseries_7d": data["timeseries_7d"],
+		"file_types": data["file_types"],
+		"detections_source": data["detections_source"],
+		"recent_files": data["recent_files"],
+		"recent_alerts": data["recent_alerts_api"],
+	}
+	return jsonify(dashboard_data_js)
 
 
 def build_dashboard_data(user: User | None):
@@ -75,9 +95,9 @@ def build_dashboard_data(user: User | None):
 		Analysis.final_verdict == "critical"
 	).count()
 
-	# Almacenamiento (adapta a tu lógica real de cuota)
+	# Almacenamiento global (todas las cuentas). La cuota se toma de la config.
 	used_bytes = db.session.query(db.func.coalesce(db.func.sum(File.size), 0)).scalar()
-	storage_quota_mb = 2048  # 2 GB por defecto
+	storage_quota_mb = current_app.config.get("STORAGE_QUOTA_MB", 2048)
 	storage_used_mb = round(used_bytes / (1024 * 1024), 1)
 	storage_used_pct = (
 		min(100, round((storage_used_mb / storage_quota_mb) * 100, 1))
@@ -189,12 +209,26 @@ def build_dashboard_data(user: User | None):
 		"malicious": src_malicious,
 	}
 
-	# Alertas recientes (no leídas primero)
+	# Recent alerts (unread first)
 	recent_alerts = (
 		Alert.query.order_by(Alert.is_read.asc(), Alert.created_at.desc())
 		.limit(10)
 		.all()
 	)
+	recent_alerts_payload: list[dict] = []
+	for a in recent_alerts:
+		recent_alerts_payload.append(
+			{
+				"id": a.id,
+				"title": a.title,
+				"severity": a.severity,
+				"description": a.description,
+				"file_id": a.file_id,
+				"analysis_id": a.analysis_id,
+				"is_read": a.is_read,
+				"created_at": a.created_at.isoformat() if a.created_at else None,
+			}
+		)
 
 	# Últimos archivos analizados (join File + Analysis)
 	recent_files = (
@@ -241,9 +275,11 @@ def build_dashboard_data(user: User | None):
 		"file_types": file_types,
 		"detections_source": detections_source,
 		"recent_alerts": recent_alerts,
+		"recent_alerts_api": recent_alerts_payload,
 		"recent_files": recent_files_payload,
 	}
 	return data
+
 
 
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
@@ -281,28 +317,325 @@ def _human_size(num_bytes: int | None) -> str:
 	return f"{v:.1f} {suffixes[i]}"
 
 
+def _compute_user_storage(user: User) -> dict:
+	"""Calcula estadísticas de almacenamiento para un usuario concreto.
+
+	Devuelve bytes usados, MB usados, MB de cuota, porcentaje y estado
+	para poder mostrar avisos claros en la página de Storage.
+	"""
+
+	quota_mb = current_app.config.get("STORAGE_QUOTA_MB", 2048)
+	used_bytes = (
+		db.session.query(db.func.coalesce(db.func.sum(File.size), 0))
+		.filter(File.user_id == user.id)
+		.scalar()
+	)
+	used_mb = round((used_bytes or 0) / (1024 * 1024), 2)
+	quota_mb_val = float(quota_mb) if quota_mb else 0.0
+	if quota_mb_val > 0:
+		pct = round(min(100.0, (used_mb / quota_mb_val) * 100.0), 1)
+		remaining_mb = max(quota_mb_val - used_mb, 0.0)
+	else:
+		pct = 0.0
+		remaining_mb = 0.0
+
+	# Estado para avisos visuales
+	if quota_mb_val == 0:
+		status = "unknown"
+	elif pct >= 100.0:
+		status = "full"
+	elif pct >= 85.0:
+		status = "warning"
+	else:
+		status = "ok"
+
+	return {
+		"used_bytes": int(used_bytes or 0),
+		"used_mb": used_mb,
+		"quota_mb": quota_mb_val,
+		"used_pct": pct,
+		"remaining_mb": remaining_mb,
+		"status": status,
+	}
+
+
+@dashboard_bp.route("/logs", methods=["GET"])
+@login_required
+def logs_view():
+	"""Simple audit log view ordered by most recent first.
+
+	Shows high-level activity events such as logins, uploads and
+	completed analyses. Designed to be minimal and read-only.
+	"""
+
+	page = request.args.get("page", 1, type=int)
+	per_page = 50
+
+	query = Log.query.order_by(Log.created_at.desc())
+	pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+	items = pagination.items
+
+	logs_payload: list[dict] = []
+	for entry in items:
+		# Intentamos parsear detalles si son JSON válido, pero mantenemos el
+		# texto original para el modal detallado en la plantilla.
+		details_obj = None
+		if entry.details:
+			try:
+				details_obj = json.loads(entry.details)
+			except Exception:
+				details_obj = None
+
+		logs_payload.append(
+			{
+				"id": entry.id,
+				"created_at": entry.created_at,
+				"username": entry.username,
+				"action": entry.action,
+				"resource": entry.resource,
+				"status": entry.status,
+				"ip_address": entry.ip_address,
+				"message": entry.message,
+				"details_raw": entry.details,
+				"details": details_obj,
+			},
+		)
+
+	return render_template(
+		"logs.html",
+		logs=logs_payload,
+		pagination=pagination,
+	)
+
+
+@dashboard_bp.route("/storage", methods=["GET"])
+@login_required
+def storage_view():
+	"""Vista de almacenamiento para el usuario actual.
+
+	Muestra cuánto espacio está usando, la cuota disponible y permite
+	gestionar el espacio eliminando ficheros (y sus informes asociados).
+	"""
+
+	stats = _compute_user_storage(current_user)
+
+	# Listado de ficheros del usuario ordenados por tamaño descendente
+	q = (
+		db.session.query(File, Analysis)
+		.outerjoin(Analysis, Analysis.file_id == File.id)
+		.filter(File.user_id == current_user.id)
+		.order_by(File.size.desc().nullslast())
+	)
+
+	files_payload: list[dict] = []
+	for f, a in q.all():
+		files_payload.append(
+			{
+				"id": f.id,
+				"filename_original": f.filename_original,
+				"file_type": f.file_type,
+				"mime_type": f.mime_type,
+				"size": f.size,
+				"size_human": _human_size(f.size),
+				"upload_date": f.upload_date,
+				"final_verdict": getattr(a, "final_verdict", None),
+			}
+		)
+
+	return render_template(
+		"storage.html",
+		stats=stats,
+		files=files_payload,
+	)
+
+
+@dashboard_bp.route("/storage/delete/<int:file_id>", methods=["POST"])
+@login_required
+def storage_delete_file(file_id: int):
+	"""Elimina un fichero del usuario y sus análisis/alertas asociados.
+
+	También borra el fichero físico del disco para liberar espacio.
+	"""
+
+	file_obj = File.query.get_or_404(file_id)
+	if file_obj.user_id != current_user.id:
+		flash("You cannot delete this file.", "error")
+		return redirect(url_for("dashboard.storage_view"))
+
+	size_bytes = file_obj.size or 0
+	filename = file_obj.filename_original or "(unnamed)"
+	path = file_obj.storage_path
+
+	# Eliminar análisis relacionados
+	analyses = Analysis.query.filter_by(file_id=file_obj.id).all()
+	for analysis in analyses:
+		# Eliminar alertas vinculadas a este análisis
+		Alert.query.filter_by(analysis_id=analysis.id).delete(synchronize_session=False)
+		
+		# Log opcional por cada análisis eliminado
+		log_event(
+			action="analysis_deleted",
+			resource="storage.delete",
+			status="success",
+			message=f"Analysis {analysis.id} deleted as part of file cleanup.",
+			details={"file_id": file_obj.id, "analysis_id": analysis.id},
+		)
+
+		db.session.delete(analysis)
+
+	# Alertas asociadas directamente al fichero (sin analysis_id)
+	Alert.query.filter_by(file_id=file_obj.id).delete(synchronize_session=False)
+
+	# Borrar fichero físico si existe
+	try:
+		if path and os.path.exists(path):
+			os.remove(path)
+	except OSError:
+		# No bloqueamos el flujo por un fallo de E/S; el registro
+		# de base de datos seguirá limpiándose.
+		pass
+
+	# Eliminar registro principal del fichero
+	db.session.delete(file_obj)
+
+	# Registrar el evento de limpieza de almacenamiento
+	log_event(
+		action="storage_cleanup",
+		resource="storage.delete",
+		status="success",
+		message=f"File '{filename}' deleted by user to free storage.",
+		details={
+			"file_id": file_id,
+			"size_bytes": int(size_bytes),
+		},
+	)
+
+	try:
+		db.session.commit()
+	except Exception:
+		db.session.rollback()
+		flash("An error occurred while deleting the file.", "error")
+		return redirect(url_for("dashboard.storage_view"))
+
+	freed_human = _human_size(size_bytes)
+	flash(f"File '{filename}' deleted. Freed {freed_human} of storage.", "success")
+	return redirect(url_for("dashboard.storage_view"))
+
+
+def _run_analysis_background(app, file_id: int, full_path: str, mime_type: str, user_id: int) -> None:
+	"""Run the full analysis in a background thread.
+
+	Creates the Analysis, generates alerts and updates the user's
+	notification counter without blocking the HTTP upload request.
+	"""
+
+	from app.analysis.pipeline import analyze_file as _analyze_file
+
+	with app.app_context():
+		try:
+			file_obj = File.query.get(file_id)
+			user = User.query.get(user_id)
+			if not file_obj or not user:
+				return
+
+			analysis_data = _analyze_file(full_path, mime_hint=mime_type)
+
+			analysis = Analysis(
+				file_id=file_obj.id,
+				user_id=user.id,
+				md5=analysis_data.get("md5"),
+				sha1=analysis_data.get("sha1"),
+				sha256=analysis_data.get("sha256"),
+				mime_type=analysis_data.get("mime_type"),
+				yara_result=analysis_data.get("yara_result"),
+				antivirus_result=analysis_data.get("antivirus_result"),
+				virustotal_result=analysis_data.get("virustotal_result"),
+				macro_detected=analysis_data.get("macro_detected"),
+				stego_detected=analysis_data.get("stego_detected"),
+				audio_analysis=analysis_data.get("audio_analysis"),
+				sandbox_score=analysis_data.get("sandbox_score"),
+				final_verdict=analysis_data.get("final_verdict"),
+				summary=analysis_data.get("summary"),
+				engine_version=analysis_data.get("engine_version"),
+				ruleset_version=analysis_data.get("ruleset_version"),
+				additional_results=analysis_data.get("additional_results"),
+			)
+			db.session.add(analysis)
+			db.session.flush()
+
+			create_alerts_for_analysis(analysis)
+			user.notifications = (user.notifications or 0) + 1
+
+			# Información de almacenamiento en el momento de finalizar el análisis
+			used_bytes = db.session.query(db.func.coalesce(db.func.sum(File.size), 0)).scalar()
+			storage_quota_mb = 2048  # Mantener alineado con el dashboard
+			storage_used_mb = round((used_bytes or 0) / (1024 * 1024), 1)
+			storage_remaining_mb = max(storage_quota_mb - storage_used_mb, 0)
+
+			# Log de actividad: análisis completado
+			log_event(
+				action="analysis_completed",
+				message=f"Analysis completed for file '{file_obj.filename_original}'.",
+				status=analysis.final_verdict or "info",
+				resource="dashboard.analysis_background",
+				user=user,
+				extra={
+					"file_id": file_obj.id,
+					"analysis_id": analysis.id,
+					"filename": file_obj.filename_original,
+					"final_verdict": analysis.final_verdict,
+					"sha256": analysis.sha256,
+					"storage_used_mb": storage_used_mb,
+					"storage_quota_mb": storage_quota_mb,
+					"storage_remaining_mb": storage_remaining_mb,
+				},
+			)
+
+			db.session.commit()
+		except Exception as exc:  # pragma: no cover - environment/thread errors
+			current_app.logger.exception("Error in background analysis: %s", exc)
+			try:
+				db.session.rollback()
+			except Exception:
+				pass
+		finally:
+			try:
+				db.session.remove()
+			except Exception:
+				pass
+
+
 @dashboard_bp.route("/upload", methods=["GET", "POST"])
 @login_required
 def upload():
-	"""Subida de ficheros y disparo del análisis completo."""
+	"""Handle file upload and launch the full analysis."""
 
 	if request.method == "GET":
 		return render_template("upload.html")
 
 	file = request.files.get("file")
 	if not file or file.filename == "":
-		flash("No se ha seleccionado ningún fichero.", "error")
+		flash("No file has been selected.", "error")
 		return redirect(url_for("dashboard.upload"))
 
 	if not _allowed_file(file.filename):
-		flash("Tipo de fichero no permitido.", "error")
+		flash("File type not allowed.", "error")
 		return redirect(url_for("dashboard.upload"))
 
-	# Validación de tamaño (además de MAX_CONTENT_LENGTH en config)
+	# Size validation (in addition to MAX_CONTENT_LENGTH in config)
 	content_length = request.content_length or 0
 	if content_length > MAX_FILE_SIZE:
-		flash("El fichero supera el tamaño máximo permitido de 100 MB.", "error")
+		flash("The file exceeds the maximum allowed size of 100 MB.", "error")
 		return redirect(url_for("dashboard.upload"))
+
+	# Per-user storage quota check
+	user_stats = _compute_user_storage(current_user)
+	if user_stats.get("status") == "full":
+		flash(
+			"Your personal storage is already full. Please delete some files in the Storage section before uploading new ones.",
+			"error",
+		)
+		return redirect(url_for("dashboard.storage_view"))
 
 	upload_folder = current_app.config.get(
 		"UPLOAD_FOLDER",
@@ -329,50 +662,52 @@ def upload():
 		storage_path=full_path,
 	)
 	db.session.add(new_file)
-	db.session.flush()  # asegura new_file.id antes del análisis
+	db.session.commit()  # persist file before launching analysis
 
-	# Ejecutar análisis sincrónico básico
-	analysis_data = analyze_file(full_path, mime_hint=file.mimetype)
+	# Información de almacenamiento tras la subida
+	used_bytes = db.session.query(db.func.coalesce(db.func.sum(File.size), 0)).scalar()
+	storage_quota_mb = 2048
+	storage_used_mb = round((used_bytes or 0) / (1024 * 1024), 1)
+	storage_remaining_mb = max(storage_quota_mb - storage_used_mb, 0)
 
-	analysis = Analysis(
-		file_id=new_file.id,
-		user_id=current_user.id,
-		md5=analysis_data.get("md5"),
-		sha1=analysis_data.get("sha1"),
-		sha256=analysis_data.get("sha256"),
-		mime_type=analysis_data.get("mime_type"),
-		yara_result=analysis_data.get("yara_result"),
-		antivirus_result=analysis_data.get("antivirus_result"),
-		virustotal_result=analysis_data.get("virustotal_result"),
-		macro_detected=analysis_data.get("macro_detected"),
-		stego_detected=analysis_data.get("stego_detected"),
-		audio_analysis=analysis_data.get("audio_analysis"),
-		sandbox_score=analysis_data.get("sandbox_score"),
-		final_verdict=analysis_data.get("final_verdict"),
-		summary=analysis_data.get("summary"),
-		engine_version=analysis_data.get("engine_version"),
-		ruleset_version=analysis_data.get("ruleset_version"),
-		additional_results=analysis_data.get("additional_results"),
+	# Log de actividad: subida de fichero
+	log_event(
+		action="upload",
+		message=f"File '{original_name}' uploaded and queued for analysis.",
+		status="success",
+		resource="dashboard.upload",
+		extra={
+			"file_id": new_file.id,
+			"filename": original_name,
+			"size_bytes": size_bytes,
+			"size_human": _human_size(size_bytes),
+			"storage_used_mb": storage_used_mb,
+			"storage_quota_mb": storage_quota_mb,
+			"storage_remaining_mb": storage_remaining_mb,
+		},
 	)
-	db.session.add(analysis)
-	db.session.flush()
 
-	# Crear alertas asociadas al análisis
-	create_alerts_for_analysis(analysis)
+	# Launch analysis in a background thread so the UI is not blocked
+	app = current_app._get_current_object()
+	thread = Thread(
+		target=_run_analysis_background,
+		args=(app, new_file.id, full_path, file.mimetype, current_user.id),
+		daemon=True,
+	)
+	thread.start()
 
-	# Actualizar contadores de notificaciones del usuario
-	current_user.notifications = (current_user.notifications or 0) + 1
-
-	db.session.commit()
-
-	flash("Fichero subido y analizado correctamente.", "success")
+	flash(
+		"File uploaded successfully. The analysis is running in the background; "
+		"you will receive a notification when it is ready.",
+		"success",
+	)
 	return redirect(url_for("dashboard.dashboard_index"))
 
 
 @dashboard_bp.route("/files", methods=["GET"])
 @login_required
 def files():
-	"""Listado de ficheros con estado de análisis."""
+	"""List of files with their analysis status."""
 
 	q = (
 		db.session.query(File, Analysis, User)
@@ -408,10 +743,10 @@ def files():
 @dashboard_bp.route("/analysis", methods=["GET"])
 @login_required
 def analysis_list():
-	"""Vista general de todos los análisis realizados.
+	"""Overview of all completed analyses.
 
-	Muestra una tabla con los ficheros analizados, hashes, veredicto
-	y fuentes de detección (ClamAV, YARA, macros, estego, audio).
+	Shows a table with analyzed files, hashes, verdict and
+	detection sources (ClamAV, YARA, macros, stego, audio).
 	"""
 
 	q = (
@@ -459,16 +794,46 @@ def analysis_list():
 @dashboard_bp.route("/analysis/<int:analysis_id>/report", methods=["GET"])
 @login_required
 def analysis_report(analysis_id: int):
-	"""Informe detallado de un análisis concreto.
+	"""Detailed report for a specific analysis.
 
-	Aquí se muestran todos los datos disponibles: hashes, metadatos,
-	resultados de motores, reglas YARA, macros, estego, audio, etc.
+	Displays all available data: hashes, metadata, engines results,
+	YARA rules, macros, stego, audio, etc.
 	"""
 
 	analysis = Analysis.query.get_or_404(analysis_id)
 	file_obj = analysis.file
 	user = analysis.user
-	alerts = Alert.query.filter_by(analysis_id=analysis.id).order_by(Alert.created_at.desc()).all()
+
+	# If the authenticated user owns this analysis, mark the related
+	# alerts as read and update their notification counter.
+	if current_user.is_authenticated and analysis.user_id == current_user.id:
+		unread_alerts = (
+			Alert.query.filter_by(
+				user_id=current_user.id,
+				analysis_id=analysis.id,
+				is_read=False,
+			)
+			.all()
+		)
+		if unread_alerts:
+			for a in unread_alerts:
+				a.is_read = True
+			# Ajustamos el contador entero de notificaciones sin dejarlo en negativo
+			decrement = len(unread_alerts)
+			current_user.notifications = max(
+				0, (current_user.notifications or 0) - decrement
+			)
+			try:
+				db.session.commit()
+			except Exception:
+				# On error, roll back so the session is not left inconsistent
+				db.session.rollback()
+
+	alerts = (
+		Alert.query.filter_by(analysis_id=analysis.id)
+		.order_by(Alert.created_at.desc())
+		.all()
+	)
 
 	# Parseo seguro de campos JSON/texto
 	def _parse_json(value):
@@ -483,6 +848,10 @@ def analysis_report(analysis_id: int):
 	yara_matches = _parse_json(analysis.yara_result) or []
 	additional_meta = _parse_json(analysis.additional_results) or {}
 	audio_info = _parse_json(analysis.audio_analysis) or analysis.audio_analysis
+	clam_status = None
+	clam_detail = None
+	clam_detection = None
+	clam_message = None
 	vt_data = _parse_json(analysis.virustotal_result)
 	vt_stats = None
 	vt_total = None
@@ -532,6 +901,34 @@ def analysis_report(analysis_id: int):
 		"sha256": analysis.sha256,
 	}
 
+	# Human-friendly interpretation of ClamAV result
+	if isinstance(antivirus_data, dict):
+		clam_status = antivirus_data.get("status")
+		clam_detail = antivirus_data.get("detail") or ""
+	elif isinstance(antivirus_data, str):
+		clam_detail = antivirus_data
+
+	if clam_detail and ":" in clam_detail:
+		try:
+			_, rest = clam_detail.split(":", 1)
+			rest = rest.strip()
+			if rest.upper().endswith("FOUND"):
+				name = rest[: -len("FOUND")].strip()
+				clam_detection = name or None
+		except Exception:
+			pass
+
+	if clam_status == "clean":
+		clam_message = "ClamAV did not detect any threats in this file."
+	elif clam_status == "infected":
+		clam_message = "ClamAV detected this file as malicious."
+	elif clam_status == "not_available":
+		clam_message = "ClamAV is not available on this system (not installed or not accessible)."
+	elif clam_status == "error":
+		clam_message = "An error occurred while running ClamAV. Please review the engine configuration."
+	elif clam_status == "unknown":
+		clam_message = "The ClamAV result is unknown. Review the technical details if needed."
+
 	context = {
 		"analysis": analysis,
 		"file": file_obj,
@@ -539,6 +936,10 @@ def analysis_report(analysis_id: int):
 		"user": user,
 		"alerts": alerts,
 		"antivirus_data": antivirus_data,
+		"clam_status": clam_status,
+		"clam_detail": clam_detail,
+		"clam_detection": clam_detection,
+		"clam_message": clam_message,
 		"yara_matches": yara_matches,
 		"additional_meta": additional_meta,
 		"audio_info": audio_info,
@@ -550,6 +951,84 @@ def analysis_report(analysis_id: int):
 	}
 
 	return render_template("analysis_report.html", **context)
+
+
+@dashboard_bp.route("/analysis/<int:analysis_id>/stego_payload", methods=["GET"])
+@login_required
+def stego_payload(analysis_id: int):
+	"""Return full steganography payload (original or decoded) as JSON.
+
+	This is used by the analysis report view to populate an on-page
+	modal with the complete payload when the user requests it.
+	"""
+
+	mode = request.args.get("mode", "decoded")  # "decoded" or "original"
+	index = request.args.get("index", "0")
+	try:
+		idx = int(index)
+	except ValueError:
+		idx = 0
+
+	analysis = Analysis.query.get_or_404(analysis_id)
+
+	# Reparse additional_results in the same way as the report view.
+	try:
+		additional_meta = json.loads(analysis.additional_results) if analysis.additional_results else {}
+	except Exception:
+		additional_meta = {}
+
+	stego = additional_meta.get("steganography") or {}
+	base64_list = stego.get("base64") or []
+	if not isinstance(base64_list, list) or not base64_list:
+		return jsonify({"error": "No steganography payload is available for this analysis."}), 404
+
+	if idx < 0 or idx >= len(base64_list):
+		return jsonify({"error": "Requested payload index is out of range."}), 404
+
+	entry = base64_list[idx] or {}
+	if mode == "original":
+		content = entry.get("original_full") or entry.get("original_preview") or ""
+		label = "Original base64 payload"
+	else:
+		content = entry.get("decoded_full") or entry.get("decoded_preview") or ""
+		label = "Decoded steganography payload"
+
+	return jsonify(
+		{
+			"mode": mode,
+			"index": idx,
+			"label": label,
+			"content": str(content),
+			"source": entry.get("source"),
+			"decoded_type": entry.get("decoded_type"),
+			"decoded_length": entry.get("decoded_length"),
+		}
+	)
+
+
+@dashboard_bp.route("/notifications/mark_all_read", methods=["POST"])
+@login_required
+def notifications_mark_all_read():
+	"""Mark all notifications for the current user as read.
+
+	Used from the bell dropdown in the navbar.
+	"""
+
+	unread = Alert.query.filter_by(user_id=current_user.id, is_read=False).all()
+	count = len(unread)
+	if count:
+		for a in unread:
+			a.is_read = True
+		current_user.notifications = max(
+			0, (current_user.notifications or 0) - count
+		)
+		try:
+			db.session.commit()
+		except Exception:
+			db.session.rollback()
+
+	# Redirect back to the previous page if possible, or to the dashboard.
+	return redirect(request.referrer or url_for("dashboard.dashboard_index"))
 
 
 

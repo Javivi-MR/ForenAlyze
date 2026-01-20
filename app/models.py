@@ -111,3 +111,37 @@ class Alert(db.Model):
     def __repr__(self) -> str:  # pragma: no cover - representación sencilla
         return f"<Alert {self.severity} {self.title}>"
 
+
+class Log(db.Model):
+    """Registro de actividad de alto nivel del usuario.
+
+    Se usa para auditar acciones importantes como inicio / fin de sesión,
+    subidas de ficheros, finalización de análisis y cambios relevantes de
+    estado en el sistema.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    # Contexto de usuario (instantánea en el momento del evento)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    username = db.Column(db.String(64), nullable=True)
+
+    # Información de red / cliente
+    ip_address = db.Column(db.String(45), nullable=True)  # IPv4 / IPv6
+    user_agent = db.Column(db.String(256), nullable=True)
+
+    # Clasificación del evento
+    action = db.Column(db.String(64), nullable=False)  # login, logout, upload, analysis_completed, etc.
+    resource = db.Column(db.String(128), nullable=True)  # dashboard.upload, analysis.report, etc.
+    status = db.Column(db.String(32), nullable=True)  # success, failed, warning, info…
+
+    # Descripción legible + detalles serializados (JSON)
+    message = db.Column(db.Text, nullable=True)
+    details = db.Column(db.Text, nullable=True)
+
+    user = db.relationship("User", backref="logs")
+
+    def __repr__(self) -> str:  # pragma: no cover - representación sencilla
+        return f"<Log {self.action} {self.username or self.user_id}>"
+

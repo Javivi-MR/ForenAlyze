@@ -17,10 +17,13 @@ listo para persistir en el modelo Analysis.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import mimetypes
 import os
+import re
+import string
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,15 +91,21 @@ def _run_clamav(path: Path) -> Dict[str, Any]:
         detail: texto con salida del comando
     """
 
+    cfg = current_app.config if current_app else {}
+    clam_path = cfg.get("CLAMAV_PATH") or "clamscan"
+
     try:
         proc = subprocess.run(
-            ["clamscan", "--stdout", "--no-summary", str(path)],
+            [clam_path, "--stdout", "--no-summary", str(path)],
             capture_output=True,
             text=True,
             timeout=120,
         )
     except FileNotFoundError:
-        return {"status": "not_available", "detail": "clamscan no encontrado"}
+        return {
+            "status": "not_available",
+            "detail": f"clamscan no encontrado (comando: {clam_path})",
+        }
     except Exception as exc:  # pragma: no cover - errores raros de entorno
         return {"status": "error", "detail": f"error ejecutando clamscan: {exc}"}
 
@@ -246,39 +255,454 @@ def _analyze_audio(path: Path, mime_type: str) -> str:
     return json.dumps(details, ensure_ascii=False)
 
 
-def _analyze_steganography(path: Path, mime_type: str) -> str:
-    """Heurística muy básica de posible esteganografía.
+def _extract_long_printable_run(data: bytes, min_len: int = 32) -> str | None:
+    """Return the longest run of printable characters in *data*.
 
-    No pretende ser una detección real, sólo un indicador simple.
+    This is used as a heuristic to decide whether LSB bits or other
+    extracted bytes contain human-readable text.
+    """
+
+    if not data:
+        return None
+
+    try:
+        decoded = data.decode("utf-8", errors="ignore")
+    except Exception:  # pragma: no cover
+        return None
+
+    best_start = best_end = 0
+    cur_start = 0
+    for i, ch in enumerate(decoded):
+        if ch.isprintable() or ch in "\r\n\t":
+            # keep current run
+            continue
+        else:
+            # end current run
+            if i - cur_start > best_end - best_start:
+                best_start, best_end = cur_start, i
+            cur_start = i + 1
+
+    # tail run
+    if len(decoded) - cur_start > best_end - best_start:
+        best_start, best_end = cur_start, len(decoded)
+
+    if best_end - best_start < min_len:
+        return None
+
+    snippet = decoded[best_start:best_end].strip()
+    return snippet or None
+
+
+def _looks_like_human_text(snippet: str) -> bool:
+    """Heurística sencilla para diferenciar texto humano de ruido.
+
+    No pretende ser un detector de idioma completo, sólo descartar
+    secuencias como "mmmmmmmmmO_6mmmm" que son imprimibles pero no
+    parecen frase real. Se basa en:
+
+    - Presencia de espacios (al menos uno)
+    - Proporción alta de letras / espacios frente a dígitos y símbolos
+    - Proporción razonable de vocales dentro de las letras
+    """
+
+    if not snippet:
+        return False
+
+    text = snippet.strip()
+    if len(text) < 16:
+        return False
+
+    # Debe haber al menos un espacio para parecer frase natural.
+    if " " not in text:
+        return False
+
+    letters = 0
+    spaces = 0
+    digits = 0
+    others = 0
+    vowels = 0
+
+    vowel_set = set("aeiouáéíóúAEIOUÁÉÍÓÚ")
+
+    for ch in text:
+        if ch.isalpha():
+            letters += 1
+            if ch in vowel_set:
+                vowels += 1
+        elif ch.isspace():
+            spaces += 1
+        elif ch.isdigit():
+            digits += 1
+        else:
+            others += 1
+
+    total = letters + spaces + digits + others
+    if total == 0:
+        return False
+
+    # Rechazamos secuencias donde la mayor parte son dígitos/símbolos.
+    letter_space_ratio = (letters + spaces) / total
+    if letter_space_ratio < 0.7:
+        return False
+
+    # Entre un 20% y 60% de vocales suele ser razonable para idiomas latinos.
+    if letters > 0:
+        vowel_ratio = vowels / letters
+        if vowel_ratio < 0.18 or vowel_ratio > 0.7:
+            return False
+
+    return True
+
+
+def _try_base64_decode(text: str) -> dict | None:
+    """Try to interpret *text* as base64 and return a small summary.
+
+    Returns a dict with decoded preview if decoding looks valid, or
+    None otherwise.
+    """
+
+    if not text:
+        return None
+
+    candidate = "".join(ch for ch in text if not ch.isspace())
+    if len(candidate) < 24 or len(candidate) % 4 != 0:
+        return None
+
+    base64_charset = set(string.ascii_letters + string.digits + "+/=")
+    if any(ch not in base64_charset for ch in candidate):
+        return None
+
+    try:
+        decoded_bytes = base64.b64decode(candidate, validate=True)
+    except Exception:  # pragma: no cover
+        return None
+
+    if not decoded_bytes:
+        return None
+
+    try:
+        decoded_text = decoded_bytes.decode("utf-8", errors="ignore")
+    except Exception:  # pragma: no cover
+        decoded_text = ""
+
+    preview = (decoded_text or repr(decoded_bytes))[:200]
+    return {
+        "decoded_preview": preview,
+        "decoded_length": len(decoded_text) or len(decoded_bytes),
+        # Full decoded content is kept so that the UI can
+        # offer a "view full payload" action when needed.
+        "decoded_full": decoded_text or None,
+    }
+
+
+def _scan_embedded_base64(data: bytes, max_segments: int = 3) -> list[dict]:
+    """Scan raw bytes looking for long base64-like strings.
+
+    This is useful for PDF, audio or other containers where data may be
+    hidden as long base64 blobs.
+    """
+
+    results: list[dict] = []
+    if not data:
+        return results
+
+    # We limit the scan window for performance in very large files.
+    max_window = 2_000_000  # 2 MB
+    if len(data) <= max_window:
+        windows = [(data, 0)]
+    else:
+        windows = [
+            (data[:max_window], 0),
+            (data[-max_window:], max(0, len(data) - max_window)),
+        ]
+
+    pattern = re.compile(rb"[A-Za-z0-9+/]{40,}={0,2}")
+
+    for window, base_offset in windows:
+        for match in pattern.finditer(window):
+            seq = match.group(0)
+            try:
+                decoded = base64.b64decode(seq, validate=True)
+            except Exception:  # pragma: no cover
+                continue
+
+            try:
+                decoded_text = decoded.decode("utf-8", errors="ignore")
+            except Exception:  # pragma: no cover
+                decoded_text = ""
+
+            decoded_type = "binary"
+            if decoded_text:
+                printable_chars = sum(c in string.printable for c in decoded_text)
+                if printable_chars / max(len(decoded_text), 1) > 0.85:
+                    decoded_type = "text"
+            if decoded.startswith(b"MZ"):
+                decoded_type = "windows_executable"
+            elif decoded.startswith(b"PK\x03\x04"):
+                decoded_type = "zip_or_office"
+            elif decoded.lstrip().startswith(b"%PDF"):
+                decoded_type = "pdf_document"
+
+            preview = (decoded_text or repr(decoded))[:200]
+            try:
+                original_full = seq.decode("ascii", errors="ignore")
+            except Exception:  # pragma: no cover
+                original_full = ""
+
+            results.append(
+                {
+                    "offset": base_offset + match.start(),
+                    "length": len(seq),
+                    # Preview used in the main report
+                    "original": original_full[:400],
+                    # Full originals/decoded payloads are kept so the
+                    # user can request them explicitly from the UI.
+                    "original_full": original_full,
+                    "decoded_preview": preview,
+                    "decoded_length": len(decoded_text) or len(decoded),
+                    "decoded_full": decoded_text or None,
+                    "decoded_type": decoded_type,
+                }
+            )
+
+            if len(results) >= max_segments:
+                return results
+
+    return results
+
+
+def _bits_to_bytes(bits: list[int], max_bytes: int) -> bytes:
+    """Concatena bits en bytes, truncando a ``max_bytes``.
+
+    Se usa para transformar los bits LSB de los canales de la imagen en una
+    secuencia de bytes sobre la que podamos buscar texto o base64.
+    """
+
+    out = bytearray()
+    byte = 0
+    count = 0
+    for b in bits:
+        byte = (byte << 1) | (1 if b else 0)
+        count += 1
+        if count == 8:
+            out.append(byte)
+            if len(out) >= max_bytes:
+                break
+            byte = 0
+            count = 0
+    return bytes(out)
+
+
+def _extract_lsb_text_from_image(path: Path) -> dict | None:
+    """Extrae texto oculto de los bits menos significativos de una imagen.
+
+    Se prueban varias variantes habituales (R, G, B y RGB combinado) para
+    aumentar las probabilidades de detectar el mensaje usado por herramientas
+    sencillas de esteganografía LSB (incluida la que has utilizado).
+    """
+
+    if Image is None:
+        return None
+
+    try:
+        with Image.open(path) as img:  # type: ignore[call-arg]
+            img = img.convert("RGB")
+            pixels = list(img.getdata())
+    except Exception:  # pragma: no cover
+        return None
+
+    max_bytes = 131_072  # ~128 KB de mensaje máximo
+    variants = [
+        ("lsb_r", [0]),
+        ("lsb_g", [1]),
+        ("lsb_b", [2]),
+        ("lsb_rgb", [0, 1, 2]),
+    ]
+
+    for name, idxs in variants:
+        bits: list[int] = []
+        for r, g, b in pixels:
+            rgb = (r, g, b)
+            for i in idxs:
+                bits.append(rgb[i] & 1)
+                if len(bits) >= max_bytes * 8:
+                    break
+            if len(bits) >= max_bytes * 8:
+                break
+
+        if len(bits) < 8:
+            continue
+
+        data = _bits_to_bytes(bits, max_bytes=max_bytes)
+        snippet = _extract_long_printable_run(data, min_len=20)
+        if not snippet:
+            continue
+
+        base64_info = _try_base64_decode(snippet)
+        # Si no parece texto humano y tampoco es base64 válido, lo
+        # tratamos como ruido y seguimos probando otras variantes.
+        if not base64_info and not _looks_like_human_text(snippet):
+            continue
+
+        result: dict = {
+            "source": name,
+            # Preview shown in the main report
+            "hidden_text_preview": snippet[:200],
+            "hidden_text_length": len(snippet),
+            # Full text so the UI can offer a "view full" action
+            "hidden_text_full": snippet,
+            "encoding": "base64" if base64_info else "plain_or_unknown",
+        }
+
+        if base64_info:
+            result.update(
+                {
+                    "base64_decoded_preview": base64_info["decoded_preview"][:200],
+                    "base64_decoded_length": base64_info["decoded_length"],
+                    "base64_decoded_full": base64_info.get("decoded_full"),
+                }
+            )
+
+        return result
+
+    return None
+
+
+def _analyze_steganography(path: Path, mime_type: str) -> tuple[str, Dict[str, Any] | None]:
+    """Perform a deeper steganography-oriented analysis.
+
+    The function returns a tuple (status, details):
+
+    - status: "no", "possible" or "unknown" (kept simple to avoid
+      breaking existing logic and visual indicators).
+    - details: optional dict with structured information about any
+      hidden content or strong indicators found.
     """
 
     ext = path.suffix.lower()
     is_image = mime_type.startswith("image/") or ext in {".jpg", ".jpeg", ".png", ".bmp", ".gif"}
     is_audio = mime_type.startswith("audio/") or ext in {".wav", ".mp3", ".flac"}
+    is_pdf = mime_type == "application/pdf" or ext == ".pdf"
 
+    details: Dict[str, Any] = {
+        "category": "image" if is_image else "audio" if is_audio else "pdf" if is_pdf else "other",
+        "status": "no",
+        "methods": [],
+        "messages": [],
+        "base64": [],
+        "notes": [],
+    }
+    status: str = "no"
+
+    # Try to read raw bytes for generic scanning.
+    try:
+        raw = path.read_bytes()
+    except Exception:  # pragma: no cover
+        raw = b""
+
+    # 1) LSB-style extraction for images
+    if is_image:
+        lsb_info = _extract_lsb_text_from_image(path)
+        if lsb_info:
+            status = "yes"
+            details["status"] = "found"
+            details["methods"].append(lsb_info.get("source", "image_lsb"))
+            details["messages"].append(
+                {
+                    "source": lsb_info.get("source", "image_lsb"),
+                    "preview": lsb_info.get("hidden_text_preview", ""),
+                    "length": lsb_info.get("hidden_text_length", 0),
+                }
+            )
+            if "base64_decoded_preview" in lsb_info:
+                details["base64"].append(
+                    {
+                        "source": lsb_info.get("source", "image_lsb"),
+                        "original_preview": lsb_info.get("hidden_text_preview", "")[:120],
+                        # Full original and decoded payloads for on-demand view
+                        "original_full": lsb_info.get("hidden_text_full"),
+                        "decoded_preview": lsb_info.get("base64_decoded_preview", ""),
+                        "decoded_length": lsb_info.get("base64_decoded_length", 0),
+                        "decoded_full": lsb_info.get("base64_decoded_full"),
+                        "decoded_type": "text",  # normalmente texto
+                    }
+                )
+            details["notes"].append(
+                "Printable content extracted from image LSB channels; steganography is very likely present."
+            )
+
+    # 2) Generic scan for embedded base64 blobs (PDF, audio, others)
+    if raw:
+        base64_segments = _scan_embedded_base64(raw)
+        if base64_segments:
+            status = "possible" if status != "yes" else status
+            details["status"] = "found" if status == "yes" else "suspicious"
+            details["methods"].append("embedded_base64")
+            for seg in base64_segments:
+                details["base64"].append(
+                    {
+                        "source": "embedded_base64",
+                        "original_preview": seg.get("original", "")[:120],
+                        "original_full": seg.get("original_full"),
+                        "decoded_preview": seg.get("decoded_preview", ""),
+                        "decoded_length": seg.get("decoded_length", 0),
+                        "decoded_full": seg.get("decoded_full"),
+                        "decoded_type": seg.get("decoded_type", "text"),
+                    }
+                )
+            details["notes"].append(
+                "Large base64-like blobs were found and decoded from the file contents."
+            )
+
+    # 3) Keep the previous size-based heuristic as an additional hint
     try:
         size = path.stat().st_size
     except Exception:  # pragma: no cover
-        return "unknown"
+        return ("unknown", details or None)
 
     if is_image and Image is not None:
         try:
             with Image.open(path) as img:  # type: ignore[call-arg]
                 w, h = img.size
-            # si el tamaño del fichero es muy superior al esperado para RGB simple
             expected = w * h * 3
             if size > expected * 3:
-                return "possible"
+                if status == "no":
+                    status = "possible"
+                details["notes"].append(
+                    "Image file is significantly larger than a simple RGB bitmap would suggest; could hide additional data."
+                )
+                if "size_heuristic" not in details["methods"]:
+                    details["methods"].append("size_heuristic")
         except Exception:  # pragma: no cover
-            return "unknown"
+            if not status:
+                return ("unknown", details or None)
 
     if is_audio:
-        # heurística simplista: tamaños muy grandes para audios muy cortos se marcan como posibles
-        # (si hay mutagen, podríamos refinar con duración real)
         if size > 50 * 1024 * 1024:  # > 50MB
-            return "possible"
+            if status == "no":
+                status = "possible"
+            details["notes"].append(
+                "Audio file is very large; may contain hidden data in unused frames or metadata."
+            )
+            if "size_heuristic" not in details["methods"]:
+                details["methods"].append("size_heuristic")
 
-    return "no"
+    if is_pdf and not details and size > 10 * 1024 * 1024:
+        # Large PDFs with no explicit hidden blobs still get a mild hint.
+        if status == "no":
+            status = "possible"
+        details["notes"].append(
+            "PDF file is unusually large; manual review recommended for potential embedded payloads."
+        )
+        if "size_heuristic" not in details["methods"]:
+            details["methods"].append("size_heuristic")
+
+    # Si seguimos sin nada relevante y el tipo no tiene análisis específico,
+    # devolvemos None en los detalles para no ensuciar metadatos.
+    if status == "no" and details["category"] == "other":
+        return ("no", None)
+
+    return (status, details or None)
 
 
 def _extract_basic_metadata(path: Path, mime_type: str) -> Dict[str, Any]:
@@ -315,7 +739,7 @@ def _decide_verdict(
     if yara_matches and any("critical" in (m.get("tags") or []) for m in yara_matches):
         return "critical"
 
-    if macro == "yes" or stego == "possible" or yara_matches:
+    if macro == "yes" or stego in {"possible", "yes"} or yara_matches:
         return "suspicious"
 
     if clam.get("status") in {"clean", "not_available"} and not yara_matches:
@@ -339,7 +763,7 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
     clam = _run_clamav(path)
     yara_matches = _run_yara(path)
     macro = _detect_macros(path)
-    stego = _analyze_steganography(path, mime_type)
+    stego_status, stego_info = _analyze_steganography(path, mime_type)
 
     audio_analysis = ""
     if mime_type.startswith("audio/") or path.suffix.lower() in {".wav", ".mp3", ".flac"}:
@@ -347,9 +771,15 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
 
     metadata = _extract_basic_metadata(path, mime_type)
 
+    # Attach detailed steganography information (if any) into the
+    # generic additional metadata structure so that the report can show
+    # a dedicated block for it without changing the database schema.
+    if stego_info:
+        metadata["steganography"] = stego_info
+
     # VirusTotal: trabajamos sólo con el hash para no subir archivos.
     vt_result = _run_virustotal(hashes["sha256"]) if hashes.get("sha256") else {"status": "no_hash"}
-    verdict = _decide_verdict(clam, yara_matches, macro, stego)
+    verdict = _decide_verdict(clam, yara_matches, macro, stego_status)
 
     summary_parts = [
         f"Veredicto: {verdict}",
@@ -358,7 +788,7 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
     ]
     if macro == "yes":
         summary_parts.append("Macros sospechosas detectadas")
-    if stego == "possible":
+    if stego_status == "possible":
         summary_parts.append("Posible esteganografía detectada")
 
     cfg = current_app.config if current_app else {}
@@ -372,7 +802,7 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
         "antivirus_result": json.dumps(clam, ensure_ascii=False),
         "virustotal_result": json.dumps(vt_result, ensure_ascii=False) if vt_result else None,
         "macro_detected": macro,
-        "stego_detected": stego,
+        "stego_detected": stego_status,
         "audio_analysis": audio_analysis or None,
         "sandbox_score": None,
         "final_verdict": verdict,

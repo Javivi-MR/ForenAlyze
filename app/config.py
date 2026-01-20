@@ -40,5 +40,12 @@ class Config:
     SQLALCHEMY_DATABASE_URI = "sqlite:///forenhub.db"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
+    # Cuota de almacenamiento por defecto (por usuario) en MB
+    STORAGE_QUOTA_MB = int(os.environ.get("STORAGE_QUOTA_MB", "2048"))
+
     # API key de VirusTotal: primero variable de entorno, luego pyvenv.cfg
     VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY") or _load_virustotal_key_from_venv()
+
+    # Ruta opcional a clamscan/clamscan.exe. Si no se define, se usará
+    # simplemente "clamscan" y se dependerá del PATH del sistema.
+    CLAMAV_PATH = os.environ.get("CLAMAV_PATH")

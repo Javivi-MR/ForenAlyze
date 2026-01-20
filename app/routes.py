@@ -17,7 +17,7 @@ def edit_user():
         if image_url:
             current_user.image_url = image_url
         db.session.commit()
-        flash('Usuario actualizado', 'success')
+        flash('User updated', 'success')
         return redirect(url_for('dashboard'))
     return render_template('edit_user.html', user=current_user)
 
