@@ -17,7 +17,6 @@ document.addEventListener("DOMContentLoaded", () => {
     "gif",
     "bmp",
     "wav",
-    "mp3",
   ];
 
   const showError = (message) => {
@@ -48,7 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       showError(
         "The selected file type is not allowed. " +
-          "Allowed formats: .exe, .pdf, .doc(x), .xls(x), images and .wav/.mp3."
+          "Allowed formats: .exe, .pdf, .doc(x), .xls(x), images and .wav."
       );
       return;
     }

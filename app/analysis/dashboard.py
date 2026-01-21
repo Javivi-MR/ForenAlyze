@@ -16,6 +16,7 @@ from flask import (
 	url_for,
 )
 from flask_login import current_user, login_required
+from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 from app.extensions import db
@@ -65,6 +66,141 @@ def dashboard_overview():
 		"recent_alerts": data["recent_alerts_api"],
 	}
 	return jsonify(dashboard_data_js)
+
+
+@dashboard_bp.route("/profile", methods=["GET", "POST"])
+@login_required
+def edit_profile():
+	"""Profile page for the current user.
+
+	Allows updating basic info (username), profile picture and password
+	via separate forms/modals.
+	"""
+
+	if request.method == "POST":
+		form_type = request.form.get("form_type", "basic").strip().lower()
+
+		if form_type == "basic":
+			new_username = (request.form.get("username") or "").strip()
+			if not new_username:
+				flash("Username cannot be empty.", "error")
+				return redirect(url_for("dashboard.edit_profile"))
+
+			# Check that the username is not already taken by someone else
+			existing = (
+				User.query.filter(User.username == new_username, User.id != current_user.id)
+				.first()
+			)
+			if existing:
+				flash("This username is already in use.", "error")
+				return redirect(url_for("dashboard.edit_profile"))
+
+			old_username = current_user.username
+			current_user.username = new_username
+			try:
+				db.session.commit()
+			except Exception:
+				db.session.rollback()
+				flash("An error occurred while updating your profile.", "error")
+				return redirect(url_for("dashboard.edit_profile"))
+
+			flash("Profile information updated.", "success")
+			log_event(
+				action="profile_update",
+				message="User updated basic profile information.",
+				status="success",
+				resource="dashboard.edit_profile",
+				extra={
+					"old_username": old_username,
+					"new_username": new_username,
+				},
+			)
+			return redirect(url_for("dashboard.edit_profile"))
+
+		elif form_type == "avatar":
+			file = request.files.get("avatar_file")
+			if not file or file.filename == "":
+				flash("Please select an image file.", "error")
+				return redirect(url_for("dashboard.edit_profile"))
+
+			ext = os.path.splitext(file.filename)[1].lower()
+			allowed_ext = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
+			if ext not in allowed_ext:
+				flash("Unsupported image format. Use PNG, JPG, GIF or WEBP.", "error")
+				return redirect(url_for("dashboard.edit_profile"))
+
+			avatar_folder = os.path.join(current_app.root_path, "static", "avatars")
+			os.makedirs(avatar_folder, exist_ok=True)
+
+			filename = secure_filename(f"user_{current_user.id}_{uuid4().hex}{ext}")
+			full_path = os.path.join(avatar_folder, filename)
+			try:
+				file.save(full_path)
+			except Exception:
+				flash("An error occurred while saving the image.", "error")
+				return redirect(url_for("dashboard.edit_profile"))
+
+			image_url = url_for("static", filename=f"avatars/{filename}")
+			current_user.image_url = image_url
+			try:
+				db.session.commit()
+			except Exception:
+				db.session.rollback()
+				flash("An error occurred while updating your profile photo.", "error")
+				return redirect(url_for("dashboard.edit_profile"))
+
+			flash("Profile photo updated.", "success")
+			log_event(
+				action="profile_avatar_update",
+				message="User updated profile photo.",
+				status="success",
+				resource="dashboard.edit_profile",
+			)
+			return redirect(url_for("dashboard.edit_profile"))
+
+		elif form_type == "password":
+			current_password = request.form.get("current_password") or ""
+			new_password = request.form.get("new_password") or ""
+			confirm_password = request.form.get("confirm_password") or ""
+
+			if not current_password or not new_password or not confirm_password:
+				flash("Please complete all password fields.", "error")
+				return redirect(url_for("dashboard.edit_profile"))
+
+			if new_password != confirm_password:
+				flash("New password and confirmation do not match.", "error")
+				return redirect(url_for("dashboard.edit_profile"))
+
+			if len(new_password) < 8:
+				flash("The new password must be at least 8 characters long.", "error")
+				return redirect(url_for("dashboard.edit_profile"))
+
+			if not check_password_hash(current_user.password, current_password):
+				flash("Current password is incorrect.", "error")
+				return redirect(url_for("dashboard.edit_profile"))
+
+			current_user.password = generate_password_hash(new_password)
+			try:
+				db.session.commit()
+			except Exception:
+				db.session.rollback()
+				flash("An error occurred while updating your password.", "error")
+				return redirect(url_for("dashboard.edit_profile"))
+
+			flash("Password updated successfully.", "success")
+			log_event(
+				action="password_change",
+				message="User changed account password.",
+				status="success",
+				resource="dashboard.edit_profile",
+			)
+			return redirect(url_for("dashboard.edit_profile"))
+
+		else:
+			flash("Invalid action.", "error")
+			return redirect(url_for("dashboard.edit_profile"))
+
+	return render_template("edit_user.html", user=current_user)
 
 
 def build_dashboard_data(user: User | None):
@@ -296,7 +432,6 @@ ALLOWED_EXTENSIONS = {
 	"gif",
 	"bmp",
 	"wav",
-	"mp3",
 }
 
 
@@ -478,7 +613,7 @@ def storage_delete_file(file_id: int):
 			resource="storage.delete",
 			status="success",
 			message=f"Analysis {analysis.id} deleted as part of file cleanup.",
-			details={"file_id": file_obj.id, "analysis_id": analysis.id},
+			extra={"file_id": file_obj.id, "analysis_id": analysis.id},
 		)
 
 		db.session.delete(analysis)
@@ -504,7 +639,7 @@ def storage_delete_file(file_id: int):
 		resource="storage.delete",
 		status="success",
 		message=f"File '{filename}' deleted by user to free storage.",
-		details={
+		extra={
 			"file_id": file_id,
 			"size_bytes": int(size_bytes),
 		},
@@ -848,6 +983,9 @@ def analysis_report(analysis_id: int):
 	yara_matches = _parse_json(analysis.yara_result) or []
 	additional_meta = _parse_json(analysis.additional_results) or {}
 	audio_info = _parse_json(analysis.audio_analysis) or analysis.audio_analysis
+	audio_spectrogram = None
+	if isinstance(additional_meta, dict):
+		audio_spectrogram = additional_meta.get("audio_spectrogram")
 	clam_status = None
 	clam_detail = None
 	clam_detection = None
@@ -943,6 +1081,7 @@ def analysis_report(analysis_id: int):
 		"yara_matches": yara_matches,
 		"additional_meta": additional_meta,
 		"audio_info": audio_info,
+		"audio_spectrogram": audio_spectrogram,
 		"vt_data": vt_data,
 		"vt_stats": vt_stats,
 		"vt_total": vt_total,

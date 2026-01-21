@@ -491,52 +491,6 @@ document.addEventListener('DOMContentLoaded', function () {
       </div>
       {% endif %}
 
-      {# Steganography deep analysis block (only when we have data) #}
-      {% if additional_meta and additional_meta.steganography is defined %}
-      {% set stego_meta = additional_meta.steganography %}
-      <div class="card bg-dark text-light mb-3">
-        <div class="card-header border-0 d-flex justify-content-between align-items-center">
-          <span class="fw-semibold">Steganography analysis</span>
-        </div>
-        <div class="card-body small">
-          {% if stego_meta.lsb or stego_meta.embedded_base64 %}
-            {% if stego_meta.lsb %}
-            <div class="mb-3">
-              <h6 class="small text-uppercase text-muted mb-1">Image LSB extraction</h6>
-              <p class="mb-1">Hidden text has been recovered from the least significant bits of the image pixels.</p>
-              <p class="mb-1 text-muted">Hidden text preview (first 200 characters):</p>
-              <pre class="small bg-black bg-opacity-25 p-2 rounded" style="max-height: 220px; overflow:auto; white-space:pre-wrap;">{{ stego_meta.lsb.hidden_text_preview }}</pre>
-              {% if stego_meta.lsb.encoding == 'base64' and stego_meta.lsb.base64_decoded_preview %}
-              <p class="mb-1 mt-2 text-muted">Base64 decoded preview:</p>
-              <pre class="small bg-black bg-opacity-25 p-2 rounded" style="max-height: 220px; overflow:auto; white-space:pre-wrap;">{{ stego_meta.lsb.base64_decoded_preview }}</pre>
-              {% endif %}
-              <p class="mb-0 text-muted small">Approximate hidden text length: {{ stego_meta.lsb.hidden_text_length }} characters.</p>
-            </div>
-            {% endif %}
-
-            {% if stego_meta.embedded_base64 %}
-            <div>
-              <h6 class="small text-uppercase text-muted mb-1">Embedded base64 blobs</h6>
-              <p class="mb-2">The following base64-encoded segments have been found inside the file. They may correspond to embedded scripts or other payloads.</p>
-              <ul class="list-unstyled mb-0">
-                {% for segment in stego_meta.embedded_base64[:3] %}
-                <li class="mb-2">
-                  <div class="text-muted small mb-1">Offset {{ segment.offset }} · Length {{ segment.length }} bytes</div>
-                  <pre class="small bg-black bg-opacity-25 p-2 rounded" style="max-height: 160px; overflow:auto; white-space:pre-wrap;">{{ segment.decoded_preview }}</pre>
-                </li>
-                {% endfor %}
-              </ul>
-            </div>
-            {% endif %}
-          {% else %}
-            <p class="text-muted mb-0">
-              No hidden text has been detected with the current heuristics. This does not rule out more advanced steganography techniques.
-            </p>
-          {% endif %}
-        </div>
-      </div>
-      {% endif %}
-
       <div class="card bg-dark text-light mb-3">
         <div class="card-header border-0 d-flex justify-content-between align-items-center">
           <span class="fw-semibold">Additional metadata</span>
@@ -547,7 +501,11 @@ document.addEventListener('DOMContentLoaded', function () {
               {% for key, value in additional_meta.items() %}
               <dt class="col-sm-3 text-muted">{{ key }}</dt>
               <dd class="col-sm-9 mb-1">
-                {% if value is mapping or value is sequence and not value is string %}
+                {% if key == 'audio_spectrogram' and value %}
+                  <img src="{{ url_for('static', filename=value) }}"
+                       alt="Audio spectrogram"
+                       class="img-fluid rounded border border-secondary bg-black bg-opacity-25">
+                {% elif value is mapping or value is sequence and not value is string %}
                   <code class="small">{{ value }}</code>
                 {% else %}
                   {{ value }}
@@ -560,31 +518,6 @@ document.addEventListener('DOMContentLoaded', function () {
           {% endif %}
         </div>
       </div>
-
-      {% if audio_info and audio_info is mapping %}
-      <div class="card bg-dark text-light mb-3">
-        <div class="card-header border-0 d-flex justify-content-between align-items-center">
-          <span class="fw-semibold">Audio metadata</span>
-        </div>
-        <div class="card-body small">
-          <dl class="row mb-0">
-            {% for key, value in audio_info.items() %}
-            <dt class="col-sm-3 text-muted">{{ key }}</dt>
-            <dd class="col-sm-9 mb-1">{{ value }}</dd>
-            {% endfor %}
-          </dl>
-        </div>
-      </div>
-      {% elif audio_info %}
-      <div class="card bg-dark text-light mb-3">
-        <div class="card-header border-0 d-flex justify-content-between align-items-center">
-          <span class="fw-semibold">Audio metadata</span>
-        </div>
-        <div class="card-body small">
-          <pre class="small bg-black bg-opacity-25 p-2 rounded" style="max-height: 220px; overflow:auto; white-space:pre-wrap;">{{ audio_info }}</pre>
-        </div>
-      </div>
-      {% endif %}
     </div>
 
     <!-- Right column: related alerts and engine version -->

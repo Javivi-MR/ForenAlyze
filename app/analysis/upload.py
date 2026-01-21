@@ -26,7 +26,6 @@ ALLOWED_EXTENSIONS = {
     "gif",
     "bmp",
     "wav",
-    "mp3",
 }
 
 

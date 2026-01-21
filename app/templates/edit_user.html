@@ -1,11 +1,399 @@
 {% extends "base.html" %}
+
+{% block title %}Edit profile · ForenHub{% endblock %}
+
 {% block content %}
-<h2>Edit user</h2>
-<form method="post">
-  <label for="username">Username:</label>
-  <input type="text" name="username" value="{{ user.username }}" required>
-  <label for="image_url">Profile image URL:</label>
-  <input type="url" name="image_url" value="{{ user.image_url }}">
-  <button type="submit">Save changes</button>
-</form>
+<div class="container py-4 profile-page">
+  <div class="row justify-content-center mb-3">
+    <div class="col-lg-10">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            {% set alert_class = 'alert-info' %}
+            {% if category == 'success' %}
+              {% set alert_class = 'alert-success' %}
+            {% elif category in ['error', 'danger'] %}
+              {% set alert_class = 'alert-danger' %}
+            {% elif category == 'warning' %}
+              {% set alert_class = 'alert-warning' %}
+            {% endif %}
+            <div class="alert {{ alert_class }} alert-dismissible fade show small" role="alert">
+              {{ message }}
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+    </div>
+  </div>
+
+  <div class="row justify-content-center g-3 g-lg-4">
+    <!-- Profile summary + avatar -->
+    <div class="col-lg-4">
+      <div class="card bg-dark text-light h-100 shadow-sm">
+        <div class="card-body d-flex flex-column align-items-center text-center">
+          <div class="profile-avatar-wrapper mb-3">
+            <img
+              src="{{ user.image_url or url_for('static', filename='default_avatar.png') }}"
+              alt="Profile picture"
+              class="profile-avatar-lg"
+            >
+          </div>
+          <h3 class="h5 mb-1">{{ user.username }}</h3>
+          <p class="text-muted small mb-3">ForenHub account</p>
+
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm w-100 mb-2"
+            data-bs-toggle="modal"
+            data-bs-target="#changeAvatarModal"
+          >
+            Change profile photo
+          </button>
+
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm w-100"
+            data-bs-toggle="modal"
+            data-bs-target="#changePasswordModal"
+          >
+            Change password
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Basic info & security cards -->
+    <div class="col-lg-8 d-flex flex-column gap-3">
+      <!-- Basic info -->
+      <div class="card bg-dark text-light shadow-sm">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <div>
+            <h2 class="h6 mb-0">Basic information</h2>
+            <small class="text-muted">Update your visible name inside ForenHub.</small>
+          </div>
+        </div>
+        <div class="card-body">
+          <form method="post" novalidate>
+            <input type="hidden" name="form_type" value="basic">
+            <div class="mb-3">
+              <label for="username" class="form-label">Username</label>
+              <input
+                type="text"
+                class="form-control"
+                id="username"
+                name="username"
+                value="{{ user.username }}"
+                maxlength="64"
+                required
+              >
+              <div class="form-text text-muted small">
+                This name will appear in logs, dashboards and reports.
+              </div>
+            </div>
+            <div class="d-flex justify-content-end">
+              <button type="submit" class="btn btn-primary btn-sm">
+                Save changes
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Security summary -->
+      <div class="card bg-dark text-light shadow-sm">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <div>
+            <h2 class="h6 mb-0">Security</h2>
+            <small class="text-muted">Manage your password and account protection.</small>
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline-secondary btn-sm"
+            data-bs-toggle="modal"
+            data-bs-target="#changePasswordModal"
+          >
+            Change password
+          </button>
+        </div>
+        <div class="card-body small text-muted">
+          <p class="mb-1">
+            Use a strong password that you do not reuse on other services.
+          </p>
+          <p class="mb-0">
+            When changing your password, you will need to confirm your current one
+            to protect your account.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Modal: change avatar #}
+<div
+  class="modal fade"
+  id="changeAvatarModal"
+  tabindex="-1"
+  aria-labelledby="changeAvatarLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark text-light border-secondary">
+      <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="form_type" value="avatar">
+        <div class="modal-header border-secondary">
+          <h5 class="modal-title" id="changeAvatarLabel">Change profile photo</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted mb-3">
+            Choose an image from your device. A preview will be shown inside the
+            circle before saving.
+          </p>
+
+          <div class="d-flex flex-column align-items-center mb-3">
+            <div class="profile-avatar-preview mb-3">
+              <img
+                id="avatarPreview"
+                src="{{ user.image_url or url_for('static', filename='default_avatar.png') }}"
+                alt="Avatar preview"
+              >
+            </div>
+            <input
+              class="form-control form-control-sm"
+              type="file"
+              id="avatarFile"
+              name="avatar_file"
+              accept="image/*"
+            >
+          </div>
+
+          <p class="small text-muted mb-0">
+            Recommended: square image, at least 256×256 px. Supported formats:
+            PNG, JPG, GIF, WEBP.
+          </p>
+        </div>
+        <div class="modal-footer border-secondary d-flex justify-content-between">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-primary btn-sm">
+            Save photo
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# Modal: change password #}
+<div
+  class="modal fade"
+  id="changePasswordModal"
+  tabindex="-1"
+  aria-labelledby="changePasswordLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark text-light border-secondary">
+      <form method="post" id="passwordForm" novalidate>
+        <input type="hidden" name="form_type" value="password">
+        <div class="modal-header border-secondary">
+          <h5 class="modal-title" id="changePasswordLabel">Change password</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="currentPassword" class="form-label">Current password</label>
+            <input
+              type="password"
+              class="form-control"
+              id="currentPassword"
+              name="current_password"
+              required
+            >
+          </div>
+          <div class="mb-3">
+            <label for="newPassword" class="form-label">New password</label>
+            <input
+              type="password"
+              class="form-control"
+              id="newPassword"
+              name="new_password"
+              minlength="8"
+              required
+            >
+            <div class="form-text text-muted small">
+              Minimum 8 characters. Use a mix of letters, numbers and symbols.
+            </div>
+          </div>
+          <div class="mb-2">
+            <label for="confirmPassword" class="form-label">Confirm new password</label>
+            <input
+              type="password"
+              class="form-control"
+              id="confirmPassword"
+              name="confirm_password"
+              required
+            >
+          </div>
+          <div id="passwordMismatchHelp" class="form-text text-danger small d-none">
+            New password and confirmation do not match.
+          </div>
+        </div>
+        <div class="modal-footer border-secondary d-flex justify-content-between">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-primary btn-sm" id="passwordSubmitBtn">
+            Update password
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+  .profile-page .card {
+    border-color: #111827;
+  }
+
+  .profile-avatar-wrapper {
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid rgba(148, 163, 184, 0.7);
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.9);
+  }
+
+  .profile-avatar-lg {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .profile-avatar-preview {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid rgba(148, 163, 184, 0.8);
+    margin-bottom: 0.5rem;
+  }
+
+  .profile-avatar-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .profile-page .card {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: fh-profile-fade-up 0.45s ease-out forwards;
+  }
+
+  .profile-page .card:nth-of-type(1) {
+    animation-delay: 0.05s;
+  }
+  .profile-page .card:nth-of-type(2) {
+    animation-delay: 0.10s;
+  }
+  .profile-page .card:nth-of-type(3) {
+    animation-delay: 0.15s;
+  }
+
+  @keyframes fh-profile-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Avatar live preview
+    const fileInput = document.getElementById('avatarFile');
+    const avatarPreview = document.getElementById('avatarPreview');
+
+    if (fileInput && avatarPreview) {
+      fileInput.addEventListener('change', function (event) {
+        const file = event.target.files && event.target.files[0];
+        if (!file) {
+          return;
+        }
+        if (!file.type || !file.type.startsWith('image/')) {
+          // Reset invalid selection
+          event.target.value = '';
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          if (e.target && typeof e.target.result === 'string') {
+            avatarPreview.src = e.target.result;
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Password form simple validation (match + length)
+    const passwordForm = document.getElementById('passwordForm');
+    const newPassword = document.getElementById('newPassword');
+    const confirmPassword = document.getElementById('confirmPassword');
+    const mismatchHelp = document.getElementById('passwordMismatchHelp');
+    const submitBtn = document.getElementById('passwordSubmitBtn');
+
+    function updatePasswordState() {
+      if (!newPassword || !confirmPassword || !mismatchHelp || !submitBtn) {
+        return;
+      }
+
+      const newVal = newPassword.value || '';
+      const confirmVal = confirmPassword.value || '';
+      const tooShort = newVal.length > 0 && newVal.length < 8;
+      const mismatch = newVal && confirmVal && newVal !== confirmVal;
+
+      if (mismatch || tooShort) {
+        mismatchHelp.classList.remove('d-none');
+        submitBtn.disabled = true;
+      } else {
+        mismatchHelp.classList.add('d-none');
+        submitBtn.disabled = false;
+      }
+    }
+
+    if (newPassword && confirmPassword) {
+      newPassword.addEventListener('input', updatePasswordState);
+      confirmPassword.addEventListener('input', updatePasswordState);
+    }
+
+    if (passwordForm) {
+      passwordForm.addEventListener('submit', function (event) {
+        if (!newPassword || !confirmPassword) {
+          return;
+        }
+        const newVal = newPassword.value || '';
+        const confirmVal = confirmPassword.value || '';
+        if (newVal.length < 8 || newVal !== confirmVal) {
+          event.preventDefault();
+          updatePasswordState();
+        }
+      });
+    }
+  });
+</script>
 {% endblock %}

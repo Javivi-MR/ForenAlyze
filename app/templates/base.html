@@ -139,8 +139,7 @@
                 <span>{{ current_user.username }}</span>
               </a>
               <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenu">
-                <!-- Adjust URL when you have the user edit view -->
-                <li><a class="dropdown-item" href="#">Edit profile</a></li>
+                <li><a class="dropdown-item" href="{{ url_for('dashboard.edit_profile') }}">Edit profile</a></li>
                 <li><a class="dropdown-item" href="/auth/logout">Logout</a></li>
               </ul>
             </li>

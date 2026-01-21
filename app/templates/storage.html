@@ -155,8 +155,8 @@
                 <form
                   method="post"
                   action="{{ url_for('dashboard.storage_delete_file', file_id=f.id) }}"
-                  class="d-inline"
-                  onsubmit="return confirm('Delete this file and its analysis reports? This action cannot be undone.');">
+                  class="d-inline storage-delete-form"
+                  data-file-name="{{ f.filename_original }}">
                   <button type="submit" class="btn btn-outline-danger btn-sm">
                     Delete
                   </button>
@@ -177,4 +177,38 @@
     </div>
   </div>
 </div>
+ 
+<!-- Modal de confirmación para borrado en Storage -->
+<div class="modal fade" id="storageDeleteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark text-light border border-danger-subtle">
+      <div class="modal-header border-0">
+        <h5 class="modal-title">Delete file</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">
+          You are about to permanently delete
+          <span class="fw-semibold" data-role="file-name">this file</span>
+          and all its associated analysis reports.
+        </p>
+        <p class="small text-muted mb-0">
+          This action cannot be undone. Make sure you have exported or saved anything you still need.
+        </p>
+      </div>
+      <div class="modal-footer border-0 d-flex justify-content-between">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
+          Cancel
+        </button>
+        <button type="button" class="btn btn-danger btn-sm" data-role="confirm-delete">
+          Yes, delete permanently
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/storage.js') }}"></script>
 {% endblock %}

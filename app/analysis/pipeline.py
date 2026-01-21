@@ -25,6 +25,7 @@ import os
 import re
 import string
 import subprocess
+import wave
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -49,6 +50,13 @@ try:  # type: ignore[unused-ignore]
 except Exception:  # pragma: no cover - dependencia opcional
     Image = None  # type: ignore[assignment]
     ExifTags = None  # type: ignore[assignment]
+
+try:  # type: ignore[unused-ignore]
+    import numpy as np  # type: ignore[import]
+    import matplotlib.pyplot as plt  # type: ignore[import]
+except Exception:  # pragma: no cover - dependencias opcionales para espectrogramas
+    np = None  # type: ignore[assignment]
+    plt = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -222,6 +230,13 @@ def _detect_macros(path: Path) -> str:
 
 
 def _analyze_audio(path: Path, mime_type: str) -> str:
+    """Análisis ligero de audio usando mutagen.
+
+    Extrae metadatos básicos (duración, bitrate, etiquetas comunes) y
+    devuelve un JSON serializado. Esta función no realiza detección de
+    esteganografía; esa parte se delega a `_analyze_steganography`.
+    """
+
     if not MutagenFile:
         return "Análisis de audio no disponible (mutagen no instalado)."
 
@@ -253,6 +268,88 @@ def _analyze_audio(path: Path, mime_type: str) -> str:
                     continue
 
     return json.dumps(details, ensure_ascii=False)
+
+
+def _generate_audio_spectrogram(path: Path) -> str | None:
+    """Genera un espectrograma PNG para audio WAV.
+
+    El archivo resultante se guarda bajo ``static/spectrograms`` y se
+    devuelve la ruta relativa (por ejemplo, ``spectrograms/foo.png``)
+    para que la vista pueda construir la URL con ``url_for('static')``.
+
+    Si las dependencias opcionales (numpy/matplotlib) no están
+    disponibles o el archivo no es un WAV PCM soportado, devuelve
+    ``None`` sin interrumpir el flujo de análisis.
+    """
+
+    if np is None or plt is None:
+        return None
+
+    ext = path.suffix.lower()
+    if ext not in {".wav", ".wave"}:
+        return None
+
+    try:
+        with wave.open(str(path), "rb") as wf:  # pragma: no cover - E/S
+            n_channels = wf.getnchannels()
+            sampwidth = wf.getsampwidth()
+            framerate = wf.getframerate()
+            n_frames = wf.getnframes()
+
+            if framerate <= 0 or n_frames == 0:
+                return None
+
+            # Limitamos la duración a ~60 segundos para evitar imágenes muy pesadas.
+            max_frames = int(min(n_frames, framerate * 60))
+            frames = wf.readframes(max_frames)
+    except Exception:  # pragma: no cover - errores de parsing WAV
+        return None
+
+    if not frames:
+        return None
+
+    # Convertimos a array numpy flotante en mono.
+    try:
+        if sampwidth == 1:
+            data = np.frombuffer(frames, dtype=np.uint8).astype(np.float32)
+            data = (data - 128.0) / 128.0  # centrado en 0
+        elif sampwidth == 2:
+            data = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+        else:
+            # Fallback genérico para anchos de muestra menos comunes
+            # (24/32-bit PCM). No necesitamos amplitud exacta, sólo
+            # una forma de onda razonable para el espectrograma.
+            data = np.frombuffer(frames, dtype=np.int8).astype(np.float32)
+
+        if n_channels > 1 and sampwidth in (1, 2):
+            data = data.reshape(-1, n_channels).mean(axis=1)
+    except Exception:  # pragma: no cover
+        return None
+
+    try:
+        fig, ax = plt.subplots(figsize=(6, 3), dpi=120)
+        ax.specgram(data, NFFT=1024, Fs=framerate, noverlap=512, cmap="magma")
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Frequency (Hz)")
+        ax.set_title("Audio spectrogram preview")
+        fig.tight_layout()
+
+        static_dir = Path(current_app.root_path) / "static" / "spectrograms"
+        static_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = f"{path.stem}_spectrogram.png"
+        out_path = static_dir / filename
+        fig.savefig(out_path)
+        plt.close(fig)
+    except Exception:  # pragma: no cover - errores de renderizado/FS
+        try:
+            plt.close(fig)  # type: ignore[name-defined]
+        except Exception:
+            pass
+        return None
+
+    # Ruta relativa respecto a /static
+    return f"spectrograms/{filename}"
 
 
 def _extract_long_printable_run(data: bytes, min_len: int = 32) -> str | None:
@@ -365,16 +462,31 @@ def _try_base64_decode(text: str) -> dict | None:
         return None
 
     candidate = "".join(ch for ch in text if not ch.isspace())
-    if len(candidate) < 24 or len(candidate) % 4 != 0:
+    if len(candidate) < 24:
         return None
 
     base64_charset = set(string.ascii_letters + string.digits + "+/=")
     if any(ch not in base64_charset for ch in candidate):
         return None
 
-    try:
-        decoded_bytes = base64.b64decode(candidate, validate=True)
-    except Exception:  # pragma: no cover
+    # Allow a small amount of trailing noise: trim up to 3 characters
+    # from the end until the length is a multiple of 4 and try to
+    # decode. This helps when the carrier introduces extra printable
+    # bytes after a valid base64 block.
+    decoded_bytes: bytes | None = None
+    for trim in range(0, 4):
+        if len(candidate) - trim < 24:
+            break
+        chunk = candidate[: len(candidate) - trim]
+        if len(chunk) % 4 != 0:
+            continue
+        try:
+            decoded_bytes = base64.b64decode(chunk, validate=True)
+            break
+        except Exception:  # pragma: no cover
+            decoded_bytes = None
+
+    if not decoded_bytes:
         return None
 
     if not decoded_bytes:
@@ -568,6 +680,128 @@ def _extract_lsb_text_from_image(path: Path) -> dict | None:
     return None
 
 
+def _extract_lsb_text_from_wav(path: Path) -> dict | None:
+    """Extrae texto oculto de los bits LSB de audio WAV.
+
+    Esta rutina se centra en WAV PCM de 8 o 16 bits. Recorre las
+    muestras de todos los canales, toma el bit menos significativo de
+    cada muestra y reconstruye una secuencia de bytes sobre la que se
+    aplican las mismas heurísticas que para imágenes: búsqueda de
+    secuencias imprimibles largas y prueba de decodificación base64.
+    """
+
+    ext = path.suffix.lower()
+    if ext not in {".wav", ".wave"}:
+        return None
+
+    try:
+        with wave.open(str(path), "rb") as wf:  # pragma: no cover - E/S
+            n_channels = wf.getnchannels()
+            sampwidth = wf.getsampwidth()
+            n_frames = wf.getnframes()
+
+            if sampwidth not in (1, 2) or n_frames == 0:
+                return None
+
+            # Limitamos el número de frames para evitar leer audios muy largos.
+            max_frames = min(n_frames, 2_000_000)
+            raw_frames = wf.readframes(max_frames)
+    except Exception:  # pragma: no cover - errores de parsing WAV
+        return None
+
+    if not raw_frames:
+        return None
+
+    # Cada muestra ocupa ``sampwidth`` bytes; como no necesitamos el
+    # valor completo, nos basta con el primer byte (LSB en little-endian).
+    max_bytes = 131_072  # ~128 KB de mensaje máximo
+    max_bits = max_bytes * 8
+    bits: list[int] = []
+
+    step = sampwidth  # avanzamos muestra a muestra (canales intercalados)
+    for i in range(0, len(raw_frames), step):
+        if len(bits) >= max_bits:
+            break
+        sample = raw_frames[i : i + sampwidth]
+        if len(sample) < sampwidth:
+            break
+        bits.append(sample[0] & 1)
+
+    if len(bits) < 8:
+        return None
+
+    data = _bits_to_bytes(bits, max_bytes=max_bytes)
+
+    # Estrategia específica para audio WAV: asumimos que, si hay un
+    # mensaje LSB "sencillo", comienza en la primera muestra. Por eso
+    # intentamos primero extraer un prefijo continuo de caracteres
+    # imprimibles desde el inicio del flujo de bytes, en vez de buscar
+    # la racha más larga en cualquier posición.
+    try:
+        decoded = data.decode("utf-8", errors="ignore")
+    except Exception:  # pragma: no cover
+        return None
+
+    prefix_chars: list[str] = []
+    for ch in decoded:
+        if ch.isprintable() or ch in "\r\n\t":
+            prefix_chars.append(ch)
+        else:
+            break
+
+    snippet = "".join(prefix_chars).strip()
+
+    # Si el prefijo imprimible inicial es demasiado corto, lo
+    # consideramos ruido y no intentamos recuperar nada.
+    if len(snippet) < 16:
+        return None
+
+    # Para audio intentamos una decodificación base64 aún más laxa que
+    # la heurística genérica: probamos directamente a interpretar el
+    # snippet como base64, añadiendo padding si es necesario y usando
+    # validate=False. Si la decodificación falla o produce salida
+    # vacía, simplemente no se marca como base64.
+    base64_info = None
+    try:
+        candidate = "".join(ch for ch in snippet if not ch.isspace())
+        if len(candidate) >= 24:
+            padded = candidate + "=" * ((4 - len(candidate) % 4) % 4)
+            decoded_bytes = base64.b64decode(padded, validate=False)
+            if decoded_bytes:
+                try:
+                    decoded_text = decoded_bytes.decode("utf-8", errors="ignore")
+                except Exception:  # pragma: no cover
+                    decoded_text = ""
+
+                preview = (decoded_text or repr(decoded_bytes))[:200]
+                base64_info = {
+                    "decoded_preview": preview,
+                    "decoded_length": len(decoded_text) or len(decoded_bytes),
+                    "decoded_full": decoded_text or None,
+                }
+    except Exception:  # pragma: no cover
+        base64_info = None
+
+    result: dict = {
+        "source": "audio_lsb",
+        "hidden_text_preview": snippet[:200],
+        "hidden_text_length": len(snippet),
+        "hidden_text_full": snippet,
+        "encoding": "base64" if base64_info else "plain_or_unknown",
+    }
+
+    if base64_info:
+        result.update(
+            {
+                "base64_decoded_preview": base64_info["decoded_preview"][:200],
+                "base64_decoded_length": base64_info["decoded_length"],
+                "base64_decoded_full": base64_info.get("decoded_full"),
+            }
+        )
+
+    return result
+
+
 def _analyze_steganography(path: Path, mime_type: str) -> tuple[str, Dict[str, Any] | None]:
     """Perform a deeper steganography-oriented analysis.
 
@@ -581,7 +815,7 @@ def _analyze_steganography(path: Path, mime_type: str) -> tuple[str, Dict[str, A
 
     ext = path.suffix.lower()
     is_image = mime_type.startswith("image/") or ext in {".jpg", ".jpeg", ".png", ".bmp", ".gif"}
-    is_audio = mime_type.startswith("audio/") or ext in {".wav", ".mp3", ".flac"}
+    is_audio = mime_type.startswith("audio/") or ext in {".wav", ".wave"}
     is_pdf = mime_type == "application/pdf" or ext == ".pdf"
 
     details: Dict[str, Any] = {
@@ -631,9 +865,54 @@ def _analyze_steganography(path: Path, mime_type: str) -> tuple[str, Dict[str, A
                 "Printable content extracted from image LSB channels; steganography is very likely present."
             )
 
+    # 1b) LSB-style extraction for WAV audio
+    if is_audio:
+        wav_lsb_info = _extract_lsb_text_from_wav(path)
+        if wav_lsb_info:
+            if status != "yes":
+                status = "yes"
+            details["status"] = "found"
+            details["methods"].append(wav_lsb_info.get("source", "audio_lsb"))
+            details["messages"].append(
+                {
+                    "source": wav_lsb_info.get("source", "audio_lsb"),
+                    "preview": wav_lsb_info.get("hidden_text_preview", ""),
+                    "length": wav_lsb_info.get("hidden_text_length", 0),
+                }
+            )
+            if "base64_decoded_preview" in wav_lsb_info:
+                details["base64"].append(
+                    {
+                        "source": wav_lsb_info.get("source", "audio_lsb"),
+                        "original_preview": wav_lsb_info.get("hidden_text_preview", "")[:120],
+                        "original_full": wav_lsb_info.get("hidden_text_full"),
+                        "decoded_preview": wav_lsb_info.get("base64_decoded_preview", ""),
+                        "decoded_length": wav_lsb_info.get("base64_decoded_length", 0),
+                        "decoded_full": wav_lsb_info.get("base64_decoded_full"),
+                        "decoded_type": "text",
+                    }
+                )
+            details["notes"].append(
+                "Printable content extracted from audio sample LSBs; audio steganography is very likely present."
+            )
+
     # 2) Generic scan for embedded base64 blobs (PDF, audio, others)
     if raw:
         base64_segments = _scan_embedded_base64(raw)
+
+        # Para audio reducimos ruido: sólo consideramos interesantes
+        # los blobs que se decodifican como texto o como un formato
+        # de fichero reconocible (EXE, ZIP/Office, PDF). Muchos MP3
+        # contienen patrones que parecen base64 pero que al decodificarse
+        # son simplemente datos binarios repetitivos.
+        if is_audio and base64_segments:
+            filtered: list[dict] = []
+            for seg in base64_segments:
+                dtype = seg.get("decoded_type")
+                if dtype in {"text", "windows_executable", "zip_or_office", "pdf_document"}:
+                    filtered.append(seg)
+            base64_segments = filtered
+
         if base64_segments:
             status = "possible" if status != "yes" else status
             details["status"] = "found" if status == "yes" else "suspicious"
@@ -766,10 +1045,19 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
     stego_status, stego_info = _analyze_steganography(path, mime_type)
 
     audio_analysis = ""
-    if mime_type.startswith("audio/") or path.suffix.lower() in {".wav", ".mp3", ".flac"}:
+    # Audio avanzado sólo para WAV/WAVE, para alinearlo con la
+    # detección de esteganografía basada en LSB y evitar MP3.
+    if path.suffix.lower() in {".wav", ".wave"}:
         audio_analysis = _analyze_audio(path, mime_type)
 
     metadata = _extract_basic_metadata(path, mime_type)
+
+    # Espectrograma de audio opcional (sólo WAV/WAVE soportados)
+    audio_spectrogram = None
+    if path.suffix.lower() in {".wav", ".wave"}:
+        audio_spectrogram = _generate_audio_spectrogram(path)
+        if audio_spectrogram:
+            metadata["audio_spectrogram"] = audio_spectrogram
 
     # Attach detailed steganography information (if any) into the
     # generic additional metadata structure so that the report can show
@@ -788,8 +1076,8 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
     ]
     if macro == "yes":
         summary_parts.append("Macros sospechosas detectadas")
-    if stego_status == "possible":
-        summary_parts.append("Posible esteganografía detectada")
+    if stego_status in {"possible", "yes"}:
+        summary_parts.append("Indicadores de esteganografía detectados")
 
     cfg = current_app.config if current_app else {}
     engine_version = str(cfg.get("FORENHUB_ENGINE_VERSION", "1.0"))
