@@ -366,6 +366,122 @@ document.addEventListener('DOMContentLoaded', function () {
       </div>
 
       {#
+        Bloque dedicado a macros VBA cuando hay información detallada
+        disponible en additional_meta['macro_details'].
+      #}
+      {% set macro_details = additional_meta.get('macro_details') if additional_meta is mapping else None %}
+      {% if macro_details %}
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <div>
+            <span class="fw-semibold">Macro analysis (VBA)</span>
+            <div class="small text-muted">Extracted VBA code and suspicious indicators</div>
+          </div>
+        </div>
+        <div class="card-body small">
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <div class="text-muted">Macro count</div>
+              <div>{{ macro_details.macro_count or 0 }}</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted">Total VBA size</div>
+              <div>{{ macro_details.code_size or 0 }} bytes</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted">Indicators</div>
+              <div>
+                {% if macro_details.indicators and macro_details.indicators|length > 0 %}
+                  <span class="badge bg-warning text-dark">{{ macro_details.indicators|length }} suspicious patterns</span>
+                {% else %}
+                  <span class="badge bg-secondary">None recorded</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          {% if macro_details.indicators and macro_details.indicators|length > 0 %}
+          <div class="mb-3">
+            <h6 class="small text-muted text-uppercase mb-1">Suspicious indicators</h6>
+            <ul class="small mb-0" style="max-height: 220px; overflow:auto;">
+              {% for ind in macro_details.indicators %}
+              <li class="mb-1">
+                <span class="badge bg-danger me-1">{{ ind.type or 'keyword' }}</span>
+                <span class="fw-semibold">{{ ind.keyword }}</span>
+                {% if ind.description %}
+                  <span class="text-muted">- {{ ind.description }}</span>
+                {% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+
+          {% if macro_details.modules and macro_details.modules|length > 0 %}
+          <div>
+            <h6 class="small text-muted text-uppercase mb-1">Extracted VBA modules</h6>
+            <div class="border border-secondary rounded p-2 bg-black bg-opacity-25" style="max-height: 260px; overflow:auto;">
+              {% for m in macro_details.modules %}
+              <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <div>
+                    <span class="badge bg-primary me-1">{{ m.vba_filename or 'Module' }}</span>
+                    {% if m.filename %}
+                      <span class="text-muted small">{{ m.filename }}</span>
+                    {% endif %}
+                    {% if m.stream_path %}
+                      <span class="text-muted small ms-1">({{ m.stream_path }})</span>
+                    {% endif %}
+                  </div>
+                  <div class="text-muted small">
+                    {{ m.length or 0 }} chars
+                  </div>
+                </div>
+                {% if m.code_preview %}
+                <pre class="small mb-1" style="white-space:pre-wrap;">{{ m.code_preview }}</pre>
+                {% endif %}
+                {% if m.code_full and (m.code_full|length) > (m.code_preview|length) %}
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary macro-payload-btn"
+                        data-index="{{ loop.index0 }}"
+                        data-url="{{ url_for('dashboard.macro_payload', analysis_id=analysis.id) }}">
+                  View full module code
+                </button>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% else %}
+          <p class="text-muted mb-0">Macros were detected in this document, but no VBA modules were extracted.</p>
+          {% endif %}
+        </div>
+      </div>
+      {% elif analysis.macro_detected == 'yes' %}
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <div>
+            <span class="fw-semibold">Macro analysis (VBA)</span>
+            <div class="small text-muted">Macros have been detected in this document, but detailed VBA extraction is not available.</div>
+          </div>
+        </div>
+        <div class="card-body small">
+          <p class="mb-2">
+            This file is a macro-enabled Office document (for example DOCM/XLSM/PPTM) and has been
+            flagged as containing macros based on its structure or metadata. However, the analysis
+            engine could not extract the VBA code.
+          </p>
+          <p class="text-muted mb-0">
+            To view the VBA source code directly in ForenHub, ensure that <code>oletools</code>
+            (olevba) is installed in the analysis environment and that the document is not
+            corrupted. Once available, new analyses will include module previews and full
+            macro code in this section.
+          </p>
+        </div>
+      </div>
+      {% endif %}
+
+      {#
         Bloque dedicado a esteganografía y contenido oculto.
         Sólo se muestra para tipos de fichero donde este análisis tiene
         sentido (imágenes, audio, PDF).
@@ -438,11 +554,43 @@ document.addEventListener('DOMContentLoaded', function () {
                         {% if b.decoded_type %}
                           <span class="text-muted small">Type: {{ b.decoded_type }}</span>
                         {% endif %}
+                        {% if b.language %}
+                          <span class="text-muted small ms-2">Language: {{ b.language }}</span>
+                        {% endif %}
                       </span>
                       {% if b.decoded_length is not none %}
                         <span class="text-muted small">{{ b.decoded_length }} bytes</span>
                       {% endif %}
                     </div>
+                    {% if b.suspicious_calls and b.suspicious_calls|length > 0 %}
+                    <div class="small text-muted mt-1">
+                      Suspicious calls/commands:
+                      {% for call in b.suspicious_calls %}
+                        <span class="badge bg-danger ms-1">{{ call }}</span>
+                      {% endfor %}
+                    </div>
+                    <ul class="small text-muted mt-1 mb-0">
+                      {% for call in b.suspicious_calls %}
+                        {% if 'system' in call %}
+                          <li><code>system()</code>: executes an OS command on the host.</li>
+                        {% elif 'nc' in call %}
+                          <li><code>nc</code>: netcat, often used to create reverse shells or exfiltrate data.</li>
+                        {% elif 'curl' in call %}
+                          <li><code>curl</code>: downloads data from a remote URL (possible payload download).</li>
+                        {% elif 'wget' in call %}
+                          <li><code>wget</code>: downloads files from a remote server (possible payload download).</li>
+                        {% elif 'bash -i' in call %}
+                          <li><code>bash -i</code>: interactive bash shell, commonly used in reverse shells.</li>
+                        {% elif 'invoke-expression' in call or 'iex' in call %}
+                          <li><code>Invoke-Expression / IEX</code>: executes dynamically built PowerShell code.</li>
+                        {% elif 'runtime.getruntime().exec' in call %}
+                          <li><code>Runtime.getRuntime().exec()</code>: Java API to spawn OS commands.</li>
+                        {% elif 'process.start' in call %}
+                          <li><code>Process.Start()</code>: creates a new process to run external programs.</li>
+                        {% endif %}
+                      {% endfor %}
+                    </ul>
+                    {% endif %}
                     {% if b.original_preview %}
                     <details class="small mt-1">
                       <summary class="cursor-pointer">Original base64 (preview)</summary>
@@ -598,11 +746,94 @@ document.addEventListener('DOMContentLoaded', function () {
     </div>
   </div>
 </div>
+
+<!-- Modal for full VBA macro code -->
+<div class="modal fade" id="macroPayloadModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content bg-dark text-light border-secondary">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">VBA macro module</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <pre class="small mb-0" style="max-height: 70vh; overflow:auto; white-space:pre-wrap;"></pre>
+      </div>
+      <div class="modal-footer border-secondary d-flex justify-content-between">
+        <span class="text-muted small">You can review and copy the full VBA code for further analysis.</span>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-role="copy-macro">Copy to clipboard</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 // Here we could add extra interactions in the future
 // (copy hashes, collapse/expand sections, etc.)
+
+// Macro payload modal: fetch full VBA module and show it inline
+document.addEventListener('DOMContentLoaded', function () {
+  var modalEl = document.getElementById('macroPayloadModal');
+  if (!modalEl) return;
+
+  var modalBody = modalEl.querySelector('.modal-body pre');
+  var modalTitle = modalEl.querySelector('.modal-title');
+  var copyBtn = modalEl.querySelector('[data-role="copy-macro"]');
+
+  var bsModal = new bootstrap.Modal(modalEl);
+
+  document.querySelectorAll('.macro-payload-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var url = btn.getAttribute('data-url');
+      var index = btn.getAttribute('data-index') || '0';
+
+      if (!url) return;
+
+      var fullUrl = url + '?index=' + encodeURIComponent(index);
+
+      modalTitle.textContent = 'Loading VBA module…';
+      modalBody.textContent = '';
+      bsModal.show();
+
+      fetch(fullUrl, { headers: { 'Accept': 'application/json' } })
+        .then(function (resp) { return resp.json(); })
+        .then(function (data) {
+          if (data.error) {
+            modalTitle.textContent = 'VBA macro module';
+            modalBody.textContent = data.error;
+            return;
+          }
+          modalTitle.textContent = data.label || 'VBA macro module';
+          modalBody.textContent = data.content || '';
+        })
+        .catch(function () {
+          modalTitle.textContent = 'VBA macro module';
+          modalBody.textContent = 'An error occurred while fetching the macro code.';
+        });
+    });
+  });
+
+  if (copyBtn && modalBody) {
+    copyBtn.addEventListener('click', function () {
+      var text = modalBody.textContent || '';
+      if (!text) return;
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch(function () {});
+      } else {
+        var tmp = document.createElement('textarea');
+        tmp.value = text;
+        document.body.appendChild(tmp);
+        tmp.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(tmp);
+      }
+    });
+  }
+});
 </script>
 {% endblock %}

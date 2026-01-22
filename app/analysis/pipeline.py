@@ -26,6 +26,7 @@ import re
 import string
 import subprocess
 import wave
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -41,6 +42,13 @@ except Exception:  # pragma: no cover - dependencia opcional
     yara = None  # type: ignore[assignment]
 
 try:  # type: ignore[unused-ignore]
+    # oletools/olevba para análisis de macros en documentos Office
+    from oletools.olevba import VBA_Parser, VBA_Scanner  # type: ignore[import]
+except Exception:  # pragma: no cover - dependencia opcional
+    VBA_Parser = None  # type: ignore[assignment]
+    VBA_Scanner = None  # type: ignore[assignment]
+
+try:  # type: ignore[unused-ignore]
     from mutagen import File as MutagenFile  # type: ignore[import]
 except Exception:  # pragma: no cover - dependencia opcional
     MutagenFile = None  # type: ignore[assignment]
@@ -52,6 +60,11 @@ except Exception:  # pragma: no cover - dependencia opcional
     ExifTags = None  # type: ignore[assignment]
 
 try:  # type: ignore[unused-ignore]
+    import matplotlib
+
+    # Usamos un backend no interactivo para evitar problemas con Tkinter
+    # en hilos en background ("main thread is not in main loop").
+    matplotlib.use("Agg")
     import numpy as np  # type: ignore[import]
     import matplotlib.pyplot as plt  # type: ignore[import]
 except Exception:  # pragma: no cover - dependencias opcionales para espectrogramas
@@ -211,22 +224,173 @@ def _run_virustotal(sha256: str) -> Dict[str, Any]:
 
 
 def _detect_macros(path: Path) -> str:
-    """Detección muy básica de macros buscando patrones comunes en binario."""
+    """Detección y análisis de macros en documentos Office.
+
+    Utiliza oletools/olevba si está disponible para:
+
+    - Determinar si el documento contiene macros.
+    - Extraer el código VBA y algunas métricas básicas.
+    - Identificar indicadores potencialmente maliciosos
+      (AutoOpen, Shell, URL sospechosas, etc.).
+
+    El resultado detallado se almacena en ``additional_results``
+    mediante la función ``_extract_macro_details``; aquí sólo
+    devolvemos "yes"/"no"/"unknown" para el campo macro_detected.
+    """
 
     ext = path.suffix.lower()
-    if ext not in {".doc", ".docm", ".xls", ".xlsm", ".ppt", ".pptm"}:
+    if ext not in {".doc", ".docm", ".xls", ".xlsm", ".ppt", ".pptm", ".docx", ".xlsx", ".pptx"}:
+        return "no"
+
+    # Si oletools no está disponible, hacemos un fallback más robusto
+    # para no romper el flujo, aunque la detección será menos fiable.
+    if VBA_Parser is None:
+        # Para contenedores OOXML (docx/docm/xlsx/xlsm/pptx/pptm) intentamos
+        # detectar la presencia de vbaProject.bin dentro del ZIP, que es una
+        # señal fuerte de que hay macros incrustadas.
+        if ext in {".docm", ".xlsm", ".pptm", ".docx", ".xlsx", ".pptx"}:
+            try:
+                if zipfile.is_zipfile(str(path)):
+                    with zipfile.ZipFile(str(path)) as zf:  # pragma: no cover - E/S
+                        names = [name.lower() for name in zf.namelist()]
+                        if any("vbaproject.bin" in name for name in names):
+                            return "yes"
+            except Exception:
+                # Si falla la inspección del ZIP seguimos con heurísticas
+                # ligeras sobre el binario completo.
+                pass
+
+        try:
+            data = path.read_bytes()
+        except Exception:  # pragma: no cover - E/S
+            return "unknown"
+
+        patterns = [
+            b"VBA",
+            b"AutoOpen",
+            b"Document_Open",
+            b"ThisDocument",
+            b"Sub Auto",
+            b"Shell(",
+            b"CreateObject(\"WScript.Shell\")",
+            b"FileSystemObject",
+        ]
+        for p in patterns:
+            if p in data:
+                return "yes"
         return "no"
 
     try:
-        data = path.read_bytes()
-    except Exception:  # pragma: no cover - E/S
+        vba = VBA_Parser(str(path))  # type: ignore[call-arg]
+    except Exception:  # pragma: no cover - errores de parsing
+        # Si por algún motivo oletools no puede parsear el archivo,
+        # marcamos el estado como desconocido en lugar de forzar "no".
         return "unknown"
 
-    patterns = [b"VBA", b"AutoOpen", b"Document_Open", b"ThisDocument"]
-    for p in patterns:
-        if p in data:
+    try:
+        if vba.detect_vba_macros():
             return "yes"
+    except Exception:  # pragma: no cover
+        return "unknown"
+
+    # Como salvaguarda adicional, para OOXML macro-enabled comprobamos
+    # también la presencia de vbaProject.bin en el ZIP.
+    if ext in {".docm", ".xlsm", ".pptm", ".docx", ".xlsx", ".pptx"}:
+        try:
+            if zipfile.is_zipfile(str(path)):
+                with zipfile.ZipFile(str(path)) as zf:  # pragma: no cover - E/S
+                    names = [name.lower() for name in zf.namelist()]
+                    if any("vbaproject.bin" in name for name in names):
+                        return "yes"
+        except Exception:  # pragma: no cover
+            pass
+
     return "no"
+
+
+def _extract_macro_details(path: Path) -> Dict[str, Any] | None:
+    """Extrae detalles de macros VBA usando oletools.
+
+    Devuelve un diccionario con estructura pensada para ser serializada
+    en JSON dentro de ``additional_results['macro_details']``.
+
+    Si oletools no está disponible o el archivo no es soportado,
+    devuelve ``None`` para no ensuciar los metadatos.
+    """
+
+    ext = path.suffix.lower()
+    if ext not in {".doc", ".docm", ".xls", ".xlsm", ".ppt", ".pptm", ".docx", ".xlsx", ".pptx"}:
+        return None
+
+    if VBA_Parser is None:
+        return None
+
+    try:
+        vba = VBA_Parser(str(path))  # type: ignore[call-arg]
+    except Exception:  # pragma: no cover - errores de parsing
+        return None
+
+    try:
+        has_macros = vba.detect_vba_macros()
+    except Exception:  # pragma: no cover
+        return None
+
+    if not has_macros:
+        return None
+
+    modules: list[dict] = []
+    macro_count = 0
+    code_size = 0
+
+    try:
+        for (filename, stream_path, vba_filename, vba_code) in vba.extract_macros():  # type: ignore[attr-defined]
+            text = vba_code or ""
+            code_size += len(text)
+            macro_count += 1
+            preview = text[:800]
+            modules.append(
+                {
+                    "filename": filename,
+                    "stream_path": stream_path,
+                    "vba_filename": vba_filename,
+                    "code_preview": preview,
+                    "code_full": text,
+                    "length": len(text),
+                }
+            )
+    except Exception:  # pragma: no cover
+        # Si falla la extracción, devolvemos lo que tengamos (prob.
+        # nada) para no romper el análisis principal.
+        pass
+
+    # Escáner de indicadores maliciosos simple basado en oletools
+    indicators: list[dict] = []
+    try:
+        if VBA_Scanner is not None:
+            # Construimos un gran bloque concatenando todo el código VBA
+            all_code = "\n".join(m.get("code_full") or "" for m in modules)
+            scanner = VBA_Scanner(all_code)  # type: ignore[call-arg]
+            for kw_type, keyword, description in scanner.scan():  # type: ignore[attr-defined]
+                indicators.append(
+                    {
+                        "type": kw_type,
+                        "keyword": keyword,
+                        "description": description,
+                    }
+                )
+    except Exception:  # pragma: no cover
+        pass
+
+    if not modules and not indicators:
+        return None
+
+    return {
+        "has_macros": True,
+        "macro_count": macro_count,
+        "code_size": code_size,
+        "modules": modules,
+        "indicators": indicators,
+    }
 
 
 def _analyze_audio(path: Path, mime_type: str) -> str:
@@ -507,6 +671,126 @@ def _try_base64_decode(text: str) -> dict | None:
     }
 
 
+def _analyze_code_snippet(snippet: str) -> dict | None:
+    """Heurística ligera para detectar lenguaje y llamadas peligrosas.
+
+    No pretende ser un parser completo; sólo marca patrones típicos de
+    C/C++, C#, Java, bash y PowerShell y resalta llamadas o comandos que
+    suelen implicar ejecución de código o acceso a sistema.
+    """
+
+    if not snippet:
+        return None
+
+    text = snippet.lower()
+
+    # Reglas muy sencillas por lenguaje
+    lang_rules = [
+        {
+            "name": "powershell",
+            "indicators": [
+                "param(",
+                "write-host",
+                "new-object system.net.webclient",
+                "new-object net.webclient",
+                "invoke-expression",
+                "iex ",
+                "powershell -",
+            ],
+            "dangerous": [
+                "invoke-expression",
+                "iex",
+                "downloadfile(",
+                "downloadstring(",
+                "start-process",
+            ],
+        },
+        {
+            "name": "bash/shell",
+            "indicators": [
+                "#!/bin/bash",
+                "#!/bin/sh",
+                "#!/usr/bin/env bash",
+                "#!/usr/bin/env sh",
+                "chmod +x",
+                " rm -rf ",
+                "curl ",
+                "wget ",
+            ],
+            "dangerous": [
+                " rm -rf ",
+                "curl ",
+                "wget ",
+                "nc ",
+                "bash -i",
+            ],
+        },
+        {
+            "name": "c/c++",
+            "indicators": [
+                "#include <",
+                "int main(",
+                "printf(",
+                "std::",
+            ],
+            "dangerous": [
+                "system(",
+                "popen(",
+                "winexec(",
+                "createprocess",
+            ],
+        },
+        {
+            "name": "c#",
+            "indicators": [
+                "using system;",
+                "namespace ",
+                "class program",
+                "static void main",
+            ],
+            "dangerous": [
+                "process.start(",
+                "new webclient(",
+                "downloadfile(",
+                "downloadstring(",
+            ],
+        },
+        {
+            "name": "java",
+            "indicators": [
+                "public static void main",
+                "system.out.println",
+                "import java.",
+            ],
+            "dangerous": [
+                "runtime.getruntime().exec",
+                "processbuilder(",
+            ],
+        },
+    ]
+
+    best_lang = None
+    best_score = 0
+    best_danger: list[str] = []
+
+    for rule in lang_rules:
+        ind_count = sum(1 for kw in rule["indicators"] if kw in text)
+        if ind_count == 0:
+            continue
+        if ind_count > best_score:
+            best_score = ind_count
+            best_lang = rule["name"]
+            best_danger = [kw.strip() for kw in rule["dangerous"] if kw in text]
+
+    if not best_lang:
+        return None
+
+    return {
+        "language": best_lang,
+        "suspicious_calls": best_danger,
+    }
+
+
 def _scan_embedded_base64(data: bytes, max_segments: int = 3) -> list[dict]:
     """Scan raw bytes looking for long base64-like strings.
 
@@ -561,6 +845,13 @@ def _scan_embedded_base64(data: bytes, max_segments: int = 3) -> list[dict]:
             except Exception:  # pragma: no cover
                 original_full = ""
 
+            language = None
+            suspicious_calls: list[str] = []
+            if decoded_type == "text" and decoded_text:
+                code_info = _analyze_code_snippet(decoded_text)
+                if code_info:
+                    language = code_info.get("language")
+                    suspicious_calls = list(code_info.get("suspicious_calls") or [])
             results.append(
                 {
                     "offset": base_offset + match.start(),
@@ -574,6 +865,8 @@ def _scan_embedded_base64(data: bytes, max_segments: int = 3) -> list[dict]:
                     "decoded_length": len(decoded_text) or len(decoded),
                     "decoded_full": decoded_text or None,
                     "decoded_type": decoded_type,
+                    "language": language,
+                    "suspicious_calls": suspicious_calls,
                 }
             )
 
@@ -667,11 +960,16 @@ def _extract_lsb_text_from_image(path: Path) -> dict | None:
         }
 
         if base64_info:
+            code_info = _analyze_code_snippet(
+                base64_info.get("decoded_full") or base64_info["decoded_preview"]
+            )
             result.update(
                 {
                     "base64_decoded_preview": base64_info["decoded_preview"][:200],
                     "base64_decoded_length": base64_info["decoded_length"],
                     "base64_decoded_full": base64_info.get("decoded_full"),
+                    "language": (code_info or {}).get("language"),
+                    "suspicious_calls": list((code_info or {}).get("suspicious_calls") or []),
                 }
             )
 
@@ -791,11 +1089,16 @@ def _extract_lsb_text_from_wav(path: Path) -> dict | None:
     }
 
     if base64_info:
+        code_info = _analyze_code_snippet(
+            base64_info.get("decoded_full") or base64_info["decoded_preview"]
+        )
         result.update(
             {
                 "base64_decoded_preview": base64_info["decoded_preview"][:200],
                 "base64_decoded_length": base64_info["decoded_length"],
                 "base64_decoded_full": base64_info.get("decoded_full"),
+                "language": (code_info or {}).get("language"),
+                "suspicious_calls": list((code_info or {}).get("suspicious_calls") or []),
             }
         )
 
@@ -859,6 +1162,8 @@ def _analyze_steganography(path: Path, mime_type: str) -> tuple[str, Dict[str, A
                         "decoded_length": lsb_info.get("base64_decoded_length", 0),
                         "decoded_full": lsb_info.get("base64_decoded_full"),
                         "decoded_type": "text",  # normalmente texto
+                        "language": lsb_info.get("language"),
+                        "suspicious_calls": list(lsb_info.get("suspicious_calls") or []),
                     }
                 )
             details["notes"].append(
@@ -890,6 +1195,8 @@ def _analyze_steganography(path: Path, mime_type: str) -> tuple[str, Dict[str, A
                         "decoded_length": wav_lsb_info.get("base64_decoded_length", 0),
                         "decoded_full": wav_lsb_info.get("base64_decoded_full"),
                         "decoded_type": "text",
+                        "language": wav_lsb_info.get("language"),
+                        "suspicious_calls": list(wav_lsb_info.get("suspicious_calls") or []),
                     }
                 )
             details["notes"].append(
@@ -927,6 +1234,8 @@ def _analyze_steganography(path: Path, mime_type: str) -> tuple[str, Dict[str, A
                         "decoded_length": seg.get("decoded_length", 0),
                         "decoded_full": seg.get("decoded_full"),
                         "decoded_type": seg.get("decoded_type", "text"),
+                        "language": seg.get("language"),
+                        "suspicious_calls": list(seg.get("suspicious_calls") or []),
                     }
                 )
             details["notes"].append(
@@ -1051,6 +1360,11 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
         audio_analysis = _analyze_audio(path, mime_type)
 
     metadata = _extract_basic_metadata(path, mime_type)
+
+    # Detalles de macros (si existen) se guardan en additional_results
+    macro_details = _extract_macro_details(path)
+    if macro_details:
+        metadata["macro_details"] = macro_details
 
     # Espectrograma de audio opcional (sólo WAV/WAVE soportados)
     audio_spectrogram = None

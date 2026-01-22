@@ -11,6 +11,9 @@ mutagen>=1.47.0       # análisis básico de audio
 yara-python>=4.3.0    # reglas YARA (requiere librerías de sistema)
 requests>=2.31.0      # integración con APIs externas (VirusTotal)
 
+# Análisis de macros en documentos Office (Opcional pero recomendado)
+oletools>=0.60        # incluye olevba para extraer y escanear macros VBA
+
 # Análisis avanzado de audio (opcional)
 numpy>=1.26.0         # soporte numérico para espectrogramas
 matplotlib>=3.8.0     # generación de espectrogramas

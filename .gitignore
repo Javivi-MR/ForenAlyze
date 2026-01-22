@@ -12,6 +12,8 @@ __pycache__/
 
 # Base de datos local
 forenhub.db
+forenhub.db-shm
+forenhub.db-wal
 
 # Archivos de configuración de entorno
 .env

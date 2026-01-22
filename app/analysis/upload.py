@@ -13,19 +13,28 @@ from app.models import File  # ajusta al nombre real del modelo
 upload_bp = Blueprint("upload", __name__)
 
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+# Extensiones permitidas para subir y analizar.
+# Incluimos formatos Office con soporte de macros para poder
+# analizar VBA malicioso (docm, xlsm, pptm) además de los
+# contenedores OOXML habituales.
 ALLOWED_EXTENSIONS = {
-    "exe",
-    "pdf",
-    "doc",
-    "docx",
-    "xls",
-    "xlsx",
-    "png",
-    "jpg",
-    "jpeg",
-    "gif",
-    "bmp",
-    "wav",
+  "exe",
+  "pdf",
+  "doc",
+  "docx",
+  "docm",
+  "xls",
+  "xlsx",
+  "xlsm",
+  "ppt",
+  "pptx",
+  "pptm",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "bmp",
+  "wav",
 }
 
 

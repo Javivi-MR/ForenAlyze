@@ -419,13 +419,21 @@ def build_dashboard_data(user: User | None):
 
 
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+# Extensiones permitidas para subida y análisis desde el dashboard.
+# Incluimos formatos Office con soporte de macros (docm/xlsm/pptm)
+# para poder detectar VBA malicioso.
 ALLOWED_EXTENSIONS = {
 	"exe",
 	"pdf",
 	"doc",
 	"docx",
+	"docm",
 	"xls",
 	"xlsx",
+	"xlsm",
+	"ppt",
+	"pptx",
+	"pptm",
 	"png",
 	"jpg",
 	"jpeg",
@@ -1141,6 +1149,55 @@ def stego_payload(analysis_id: int):
 			"source": entry.get("source"),
 			"decoded_type": entry.get("decoded_type"),
 			"decoded_length": entry.get("decoded_length"),
+		}
+	)
+
+
+@dashboard_bp.route("/analysis/<int:analysis_id>/macro_payload", methods=["GET"])
+@login_required
+def macro_payload(analysis_id: int):
+	"""Devuelve el código completo de un módulo VBA como JSON.
+
+	Se utiliza desde el informe de análisis para poblar un modal con
+	el módulo seleccionado cuando el usuario solicita ver el código
+	completo. Trabaja sobre additional_results['macro_details'].
+	"""
+
+	index = request.args.get("index", "0")
+	try:
+		idx = int(index)
+	except ValueError:
+		idx = 0
+
+	analysis = Analysis.query.get_or_404(analysis_id)
+
+	try:
+		additional_meta = json.loads(analysis.additional_results) if analysis.additional_results else {}
+	except Exception:
+		additional_meta = {}
+
+	macro = additional_meta.get("macro_details") or {}
+	modules = macro.get("modules") or []
+	if not isinstance(modules, list) or not modules:
+		return jsonify({"error": "No macro modules are available for this analysis."}), 404
+
+	if idx < 0 or idx >= len(modules):
+		return jsonify({"error": "Requested module index is out of range."}), 404
+
+	entry = modules[idx] or {}
+	content = entry.get("code_full") or entry.get("code_preview") or ""
+	label_parts = []
+	if entry.get("vba_filename"):
+		label_parts.append(str(entry.get("vba_filename")))
+	if entry.get("filename"):
+		label_parts.append(f"({entry.get('filename')})")
+	label = " ".join(label_parts) if label_parts else "VBA macro module"
+
+	return jsonify(
+		{
+			"index": idx,
+			"label": label,
+			"content": str(content),
 		}
 	)
 

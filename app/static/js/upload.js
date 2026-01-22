@@ -5,18 +5,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB
   const ALLOWED_EXTENSIONS = [
-    "exe",
-    "pdf",
-    "doc",
-    "docx",
-    "xls",
-    "xlsx",
-    "png",
-    "jpg",
-    "jpeg",
-    "gif",
-    "bmp",
-    "wav",
+  "exe",
+  "pdf",
+  "doc",
+  "docx",
+  "docm",
+  "xls",
+  "xlsx",
+  "xlsm",
+  "ppt",
+  "pptx",
+  "pptm",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "bmp",
+  "wav",
   ];
 
   const showError = (message) => {
@@ -46,9 +51,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
       e.preventDefault();
       showError(
-        "The selected file type is not allowed. " +
-          "Allowed formats: .exe, .pdf, .doc(x), .xls(x), images and .wav."
-      );
+  "The selected file type is not allowed. " +
+    "Allowed formats: .exe, .pdf, .doc(x/m), .xls(x/m), .ppt(x/m), images and .wav."
+  );
       return;
     }
 
