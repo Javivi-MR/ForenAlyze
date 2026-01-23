@@ -2,8 +2,12 @@ Flask==2.3.2
 Flask-Login==0.6.3
 Flask-WTF==1.1.1
 Flask-SQLAlchemy==3.0.5
+Flask-Migrate>=4.0.5
 WTForms==3.1.2
 Werkzeug==2.3.7
+
+# Carga automática de .env (variables de entorno desde ficheros)
+python-dotenv>=1.0.0
 
 # Análisis y utilidades
 Pillow>=10.0.0        # metadatos de imagen / EXIF
@@ -17,3 +21,9 @@ oletools>=0.60        # incluye olevba para extraer y escanear macros VBA
 # Análisis avanzado de audio (opcional)
 numpy>=1.26.0         # soporte numérico para espectrogramas
 matplotlib>=3.8.0     # generación de espectrogramas
+
+# Base de datos PostgreSQL
+psycopg2-binary>=2.9.9
+
+# Generación de informes PDF
+reportlab>=4.0.7

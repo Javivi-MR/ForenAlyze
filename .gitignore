@@ -11,13 +11,15 @@ __pycache__/
 *.pyd
 
 # Base de datos local
-forenhub.db
-forenhub.db-shm
-forenhub.db-wal
+forenalyze.db
+forenalyze.db-shm
+forenalyze.db-wal
 
 # Archivos de configuración de entorno
 .env
 .env.*
+
+yara-signature-base/
 
 # Archivos subidos
 /instance/uploads/*

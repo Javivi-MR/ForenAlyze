@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}ForenHub{% endblock %}</title>
+    <title>{% block title %}Forenalyze{% endblock %}</title>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- AOS Animate On Scroll CSS -->
@@ -15,8 +15,8 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
       <div class="container-fluid">
         <a class="navbar-brand fw-bold d-flex align-items-center gap-2 fs-3" href="/dashboard">
-          <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo ForenHub" width="40" height="40" class="d-inline-block align-text-top filter-white logo-anim">
-          ForenHub
+          <img src="{{ url_for('static', filename='logo.svg') }}" alt="Logo Forenalyze" width="40" height="40" class="d-inline-block align-text-top filter-white logo-anim">
+          Forenalyze
         </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
           <span class="navbar-toggler-icon"></span>
@@ -37,6 +37,7 @@
             </li>
 
             {% if current_user.is_authenticated %}
+
             <!-- Bell with counter + notifications dropdown -->
             <li class="nav-item nav-bell">
               <div class="nav-link position-relative p-0 bell-toggle">
@@ -163,7 +164,7 @@
 
     <!-- Footer -->
     <footer class="bg-dark text-light text-center py-3 mt-auto">
-      <small>ForenHub &copy; 2026 &middot; Master thesis project UCA</small>
+      <small>Forenalyze &copy; 2026 &middot; Master thesis project UCA</small>
     </footer>
 
     <style>

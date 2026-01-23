@@ -2,28 +2,30 @@ from flask import Flask, render_template
 from sqlalchemy import text
 
 from .config import Config
-from .extensions import db, login_manager
+from .extensions import db, login_manager, migrate
+
+try:  # Carga opcional de variables desde .env si python-dotenv está instalado
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover
+    load_dotenv = None  # type: ignore[assignment]
 
 
 def create_app():
+    if load_dotenv is not None:
+        # Cargamos variables de entorno desde un fichero .env en entorno de
+        # desarrollo. Las variables ya definidas en el entorno del sistema
+        # tienen prioridad.
+        load_dotenv(override=False)
+
     app = Flask(__name__)
     app.config.from_object(Config)
 
     db.init_app(app)
     login_manager.init_app(app)
+    migrate.init_app(app, db)
 
-    # Para SQLite, activamos WAL y ampliamos el timeout de bloqueo para
-    # reducir errores "database is locked" cuando hay hilos en paralelo.
-    with app.app_context():
-        uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
-        if uri.startswith("sqlite:///"):
-            try:
-                with db.engine.connect() as conn:  # type: ignore[attr-defined]
-                    conn.execute(text("PRAGMA journal_mode=WAL;"))
-                    conn.execute(text("PRAGMA busy_timeout=30000;"))
-            except Exception:
-                # No rompemos la app.
-                pass
+    # Ya no usamos SQLite como backend principal, por lo que no aplicamos
+    # PRAGMAs específicos de SQLite aquí.
 
     from .auth import auth_bp
     # Blueprint principal de dashboard, subida y listado de ficheros

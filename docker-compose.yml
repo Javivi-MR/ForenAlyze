@@ -1,0 +1,41 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: forenalyze-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: forenalyze
+      POSTGRES_PASSWORD: forenalyze
+      POSTGRES_DB: forenalyze
+    ports:
+      - "5432:5432"
+    volumes:
+      - forenalyze_pgdata:/var/lib/postgresql/data
+
+  tika:
+    image: apache/tika:latest
+    container_name: forenalyze-tika
+    restart: unless-stopped
+    ports:
+      - "9998:9998"
+
+  web:
+    build: .
+    container_name: forenalyze-web
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - tika
+    environment:
+      DATABASE_URL: postgresql+psycopg2://forenalyze:forenalyze@postgres:5432/forenalyze
+      CLAMAV_PATH: clamscan
+      SECRET_KEY: forenalyze-secret-key
+      TIKA_ENABLED: "true"
+      TIKA_SERVER_URL: http://tika:9998
+    ports:
+      - "8000:8000"
+
+volumes:
+  forenalyze_pgdata:

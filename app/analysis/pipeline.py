@@ -1,4 +1,4 @@
-"""Pipeline de análisis de ficheros para ForenHub.
+"""Pipeline de análisis de ficheros para Forenalyze.
 
 Este módulo implementa el análisis básico solicitado:
 
@@ -32,6 +32,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from flask import current_app
+
+import time
 
 import requests
 
@@ -76,6 +78,363 @@ except Exception:  # pragma: no cover - dependencias opcionales para espectrogra
 class YaraConfig:
     enabled: bool
     rules_path: Optional[Path]
+
+
+def _run_sandbox(path: Path, mime_type: str) -> Dict[str, Any] | None:
+    """Hook de integración con sandbox dinámico (p.ej. Cuckoo).
+
+    Para este TFM se implementa como un punto de extensión bien
+    definido que puede trabajar en tres modos principales, según la
+    configuración de ``current_app.config``:
+
+    - SANDBOX_ENABLED = false  -> devuelve ``None`` y no afecta al
+      veredicto (modo desactivado, comportamiento actual).
+    - SANDBOX_ENABLED = true y SANDBOX_MODE = "mock" -> genera un
+      resultado sintético a partir del tipo de fichero para mostrar
+      cómo se integrarían score y etiquetas de sandbox en los
+      informes HTML/JSON/PDF.
+        - SANDBOX_ENABLED = true y SANDBOX_MODE = "file" -> intenta leer
+            un fichero JSON de ejemplo desde SANDBOX_MOCK_RESULT_PATH, que
+            puede contener la salida real de una ejecución de Cuckoo u otra
+            sandbox externa. Esto permite una PoC offline reutilizando
+            resultados capturados previamente.
+
+        - SANDBOX_ENABLED = true y SANDBOX_MODE = "hybrid_analysis" ->
+            envía el fichero a un servicio remoto Hybrid Analysis / Falcon
+            Sandbox usando su API HTTP (cuenta community con API key) y
+            adjunta en los metadatos la URL del informe público.
+
+    El contrato de salida está pensado para mapearse de forma
+    directa a los campos ``sandbox_score`` y
+    ``additional_results['sandbox']`` en el modelo Analysis:
+
+    {
+        "status": "disabled" | "mock" | "ok" | "error" | "submitted",
+        "engine": "cuckoo" | "hybrid-analysis" | "other",
+        "score": float | None,
+        "summary": str,
+        "malware_family": str | None,
+        "tags": list[str],
+        "raw": dict | None,  # resultado original de la sandbox
+        # Campos opcionales adicionales para integraciones remotas
+        # (por ejemplo Hybrid Analysis):
+        # "job_id": str | None,
+        # "sha256": str | None,
+        # "report_url": str | None,
+    }
+    """
+
+    cfg = current_app.config if current_app else {}
+    if not cfg.get("SANDBOX_ENABLED", False):
+        return None
+
+    mode = str(cfg.get("SANDBOX_MODE", "disabled") or "disabled").lower()
+    engine_name = "cuckoo"
+
+    # Modo completamente desactivado aunque SANDBOX_ENABLED sea true
+    if mode in {"disabled", "off", "none"}:
+        return {
+            "status": "disabled",
+            "engine": engine_name,
+            "score": None,
+            "summary": "Dynamic sandbox integration is configured as disabled.",
+            "malware_family": None,
+            "tags": [],
+            "raw": None,
+        }
+
+    # Modo mock: resultado sintético basado en tipo de fichero.
+    if mode == "mock":
+        ext = path.suffix.lower()
+        base_summary = "Sandbox mock result for demonstration purposes only."
+        score: float | None = None
+        tags: list[str] = []
+
+        if ext in {".exe", ".dll"}:
+            score = 8.2
+            tags = ["pe", "executable", "network-activity"]
+        elif ext in {".doc", ".docm", ".xls", ".xlsm", ".ppt", ".pptm"}:
+            score = 6.5
+            tags = ["office", "macro-potential"]
+        elif ext in {".pdf"}:
+            score = 4.0
+            tags = ["pdf", "document"]
+        else:
+            score = 2.0
+            tags = ["generic"]
+
+        return {
+            "status": "mock",
+            "engine": engine_name,
+            "score": float(score) if score is not None else None,
+            "summary": base_summary,
+            "malware_family": None,
+            "tags": tags,
+            "raw": None,
+        }
+
+    # Modo "file": PoC leyendo un JSON de ejemplo desde disco.
+    if mode == "file":
+        path_cfg = cfg.get("SANDBOX_MOCK_RESULT_PATH")
+        if not path_cfg:
+            return {
+                "status": "error",
+                "engine": engine_name,
+                "score": None,
+                "summary": "SANDBOX_MOCK_RESULT_PATH is not configured.",
+                "malware_family": None,
+                "tags": [],
+                "raw": None,
+            }
+
+        json_path = Path(path_cfg)
+        if not json_path.exists():
+            return {
+                "status": "error",
+                "engine": engine_name,
+                "score": None,
+                "summary": f"Sandbox mock result file not found: {json_path}",
+                "malware_family": None,
+                "tags": [],
+                "raw": None,
+            }
+
+        try:
+            raw_data = json.loads(json_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # pragma: no cover - E/S demo
+            return {
+                "status": "error",
+                "engine": engine_name,
+                "score": None,
+                "summary": f"Failed to parse sandbox mock JSON: {exc}",
+                "malware_family": None,
+                "tags": [],
+                "raw": None,
+            }
+
+        # Intentamos extraer algunos campos típicos de Cuckoo-like JSON.
+        score_val = None
+        family = None
+        tags: list[str] = []
+
+        if isinstance(raw_data, dict):
+            score_val = raw_data.get("score") or raw_data.get("info", {}).get("score")
+            family = raw_data.get("malware_family") or raw_data.get("signature_family")
+            tags_val = raw_data.get("tags") or raw_data.get("signatures")
+            if isinstance(tags_val, list):
+                # Si vienen firmas completas, extraemos nombres
+                if tags_val and isinstance(tags_val[0], dict) and "name" in tags_val[0]:
+                    tags = [str(s.get("name")) for s in tags_val if isinstance(s, dict)]
+                else:
+                    tags = [str(t) for t in tags_val]
+
+        try:
+            score_f = float(score_val) if score_val is not None else None
+        except Exception:
+            score_f = None
+
+        return {
+            "status": "ok",
+            "engine": engine_name,
+            "score": score_f,
+            "summary": "Sandbox result loaded from JSON file (PoC mode).",
+            "malware_family": family,
+            "tags": tags,
+            "raw": raw_data if isinstance(raw_data, dict) else None,
+        }
+
+    # Modo remoto: envío del fichero a Hybrid Analysis / Falcon Sandbox
+    # usando su API HTTP. Este modo está pensado para integrarse con
+    # una cuenta community, respetando sus límites y términos de uso.
+    if mode in {"hybrid_analysis", "hybrid-analysis", "hybrid"}:
+        api_key = cfg.get("HYBRID_ANALYSIS_API_KEY")
+        api_url = str(cfg.get("HYBRID_ANALYSIS_API_URL") or "").strip()
+        public_url = str(cfg.get("HYBRID_ANALYSIS_PUBLIC_URL") or "").strip()
+        env_id = str(cfg.get("HYBRID_ANALYSIS_ENV_ID") or "").strip()
+
+        if not api_key:
+            return {
+                "status": "error",
+                "engine": "hybrid-analysis",
+                "score": None,
+                "summary": "Hybrid Analysis API key is not configured.",
+                "malware_family": None,
+                "tags": [],
+                "raw": None,
+            }
+
+        if not api_url:
+            return {
+                "status": "error",
+                "engine": "hybrid-analysis",
+                "score": None,
+                "summary": "HYBRID_ANALYSIS_API_URL is not configured.",
+                "malware_family": None,
+                "tags": [],
+                "raw": None,
+            }
+
+        # Normalizamos la URL base para evitar diferencias entre
+        # https://www.hybrid-analysis.com y https://hybrid-analysis.com,
+        # usando siempre esta última, que es la que muestra la OpenAPI
+        # oficial en sus ejemplos.
+        if "://www.hybrid-analysis.com" in api_url:
+            api_url = api_url.replace("://www.hybrid-analysis.com", "://hybrid-analysis.com")
+
+        # environment_id es obligatorio según la documentación de la
+        # API v2; si no está configurado, devolvemos error explícito
+        # en lugar de enviar una petición incompleta.
+        if not env_id:
+            return {
+                "status": "error",
+                "engine": "hybrid-analysis",
+                "score": None,
+                "summary": "HYBRID_ANALYSIS_ENV_ID is not configured (environment_id is required by Hybrid Analysis API).",
+                "malware_family": None,
+                "tags": [],
+                "raw": None,
+            }
+
+        submit_url = api_url.rstrip("/") + "/submit/file"
+        headers = {
+            "api-key": api_key,
+            "accept": "application/json",
+            # Algunos despliegues de Hybrid Analysis esperan un
+            # User-Agent concreto; permitimos configurarlo vía env si
+            # fuera necesario, con un valor por defecto genérico.
+            "user-agent": str(cfg.get("HYBRID_ANALYSIS_USER_AGENT") or "Forenalyze-TFM"),
+        }
+
+        data: dict[str, str] = {"environment_id": env_id}
+
+        try:
+            with path.open("rb") as fh:  # pragma: no cover - E/S remota
+                files = {"file": (path.name, fh)}
+                resp = requests.post(
+                    submit_url,
+                    headers=headers,
+                    files=files,
+                    data=data,
+                    timeout=60,
+                )
+        except Exception as exc:  # pragma: no cover - errores de red/API
+            return {
+                "status": "error",
+                "engine": "hybrid-analysis",
+                "score": None,
+                "summary": f"Error submitting file to Hybrid Analysis: {exc}",
+                "malware_family": None,
+                "tags": [],
+                "raw": None,
+            }
+
+        if not resp.ok:
+            detail = (resp.text or "")[:500]
+            return {
+                "status": "error",
+                "engine": "hybrid-analysis",
+                "score": None,
+                "summary": f"Hybrid Analysis API returned HTTP {resp.status_code}.",
+                "malware_family": None,
+                "tags": ["hybrid-analysis"],
+                "raw": {"http_status": resp.status_code, "detail": detail},
+            }
+
+        try:
+            raw_resp = resp.json()
+        except Exception:  # pragma: no cover
+            raw_resp = None
+
+        job_id = None
+        sample_sha256 = None
+        if isinstance(raw_resp, dict):
+            job_id = raw_resp.get("job_id") or raw_resp.get("id")
+            sample_sha256 = raw_resp.get("sha256") or raw_resp.get("sha2")
+
+        report_url = None
+        if sample_sha256:
+            base_public = public_url or "https://www.hybrid-analysis.com"
+            report_url = base_public.rstrip("/") + f"/sample/{sample_sha256}"
+
+        tags: list[str] = ["hybrid-analysis"]
+        if env_id:
+            tags.append(f"env:{env_id}")
+
+        # Intentamos obtener un pequeño resumen adicional del
+        # análisis usando el endpoint de Overview de Hybrid
+        # Analysis. Esto permite mostrar en Forenalyze algunos
+        # datos ligeros (p.ej. score/veredicto) sin necesidad de que
+        # el usuario abra siempre la sandbox en otra pestaña.
+        overview_data: dict[str, Any] | None = None
+        verdict: str | None = None
+        threat_score: float | None = None
+
+        if sample_sha256:
+            overview_url = api_url.rstrip("/") + f"/overview/{sample_sha256}/summary"
+            try:  # pragma: no cover - llamada HTTP remota
+                oresp = requests.get(
+                    overview_url,
+                    headers=headers,
+                    timeout=30,
+                )
+                if oresp.ok:
+                    try:
+                        parsed = oresp.json()
+                    except Exception:
+                        parsed = None
+                    if isinstance(parsed, dict):
+                        overview_data = parsed
+            except Exception:
+                # Si falla el overview no rompemos el análisis
+                overview_data = None
+
+        if isinstance(overview_data, dict):
+            # Algunos despliegues exponen un campo "verdict" o
+            # "threat_level" con una etiqueta tipo
+            # "suspicious"/"malicious"/"clean".
+            v = overview_data.get("verdict") or overview_data.get("threat_level")
+            verdict = str(v) if v is not None else None
+
+            # La API suele exponer un score numérico (e.g.
+            # "threat_score"). Si existe e incluye un valor
+            # convertible a float, lo usamos como sandbox_score.
+            ts_val = overview_data.get("threat_score")
+            try:
+                if ts_val is not None:
+                    threat_score = float(ts_val)
+            except Exception:
+                threat_score = None
+
+        result: dict[str, Any] = {
+            "status": "submitted",
+            "engine": "hybrid-analysis",
+            "score": threat_score,
+            "summary": "File submitted to Hybrid Analysis sandbox.",
+            "malware_family": None,
+            "tags": tags,
+            "raw": raw_resp if isinstance(raw_resp, dict) else None,
+            "job_id": job_id,
+            "sha256": sample_sha256,
+            "report_url": report_url,
+        }
+
+        if verdict:
+            result["verdict"] = verdict
+        if isinstance(overview_data, dict):
+            result["overview"] = overview_data
+
+        return result
+
+    # Cualquier otro modo se trata como desactivado pero explícito.
+    return {
+        "status": "disabled",
+        "engine": engine_name,
+        "score": None,
+        "summary": f"Sandbox mode '{mode}' is not implemented; integration point only.",
+        "malware_family": None,
+        "tags": [],
+        "raw": None,
+    }
 
 
 def _compute_hashes(path: Path) -> Dict[str, str]:
@@ -139,12 +498,24 @@ def _run_clamav(path: Path) -> Dict[str, Any]:
 
 
 def _load_yara_config() -> YaraConfig:
+    """Carga la configuración de YARA desde current_app.config.
+
+    Admite tanto un único fichero de reglas (YARA_RULES_PATH apunta a
+    un .yar/.yara/.rule) como un directorio que contenga múltiples
+    ficheros de reglas. En este último caso, se compilan todas las
+    reglas encontradas bajo ese directorio.
+    """
+
     cfg = current_app.config if current_app else {}
     enabled = bool(cfg.get("YARA_ENABLED", False))
     rules_path_cfg = cfg.get("YARA_RULES_PATH")
-    rules_path = Path(rules_path_cfg) if rules_path_cfg else None
-    if not yara or not enabled or not rules_path or not rules_path.exists():
+    if not yara or not enabled or not rules_path_cfg:
         return YaraConfig(enabled=False, rules_path=None)
+
+    rules_path = Path(rules_path_cfg)
+    if not rules_path.exists():
+        return YaraConfig(enabled=False, rules_path=None)
+
     return YaraConfig(enabled=True, rules_path=rules_path)
 
 
@@ -154,7 +525,23 @@ def _run_yara(path: Path) -> List[Dict[str, Any]]:
         return []
 
     try:
-        rules = yara.compile(filepath=str(conf.rules_path))  # type: ignore[arg-type]
+        # Si YARA_RULES_PATH apunta a un directorio, recopilamos todas las
+        # reglas .yar/.yara/.rule de forma recursiva y las compilamos como
+        # un conjunto. Si apunta a un fichero, compilamos sólo ese fichero.
+        if conf.rules_path.is_dir():
+            rule_files: list[Path] = []
+            for ext in (".yar", ".yara", ".rule"):
+                rule_files.extend(conf.rules_path.rglob(f"*{ext}"))
+            if not rule_files:
+                return []
+            filepaths: dict[str, str] = {}
+            for idx, rf in enumerate(sorted(rule_files)):
+                namespace = f"ns_{idx}_{rf.stem}"
+                filepaths[namespace] = str(rf)
+            rules = yara.compile(filepaths=filepaths)  # type: ignore[arg-type]
+        else:
+            rules = yara.compile(filepath=str(conf.rules_path))  # type: ignore[arg-type]
+
         matches = rules.match(str(path))
     except Exception as exc:  # pragma: no cover - errores de reglas
         return [{"error": f"error YARA: {exc}"}]
@@ -181,9 +568,27 @@ def _run_virustotal(sha256: str) -> Dict[str, Any]:
     """
 
     cfg = current_app.config if current_app else {}
+
+    # Permite desactivar explícitamente VirusTotal desde configuración
+    if not cfg.get("VIRUSTOTAL_ENABLED", True):
+        return {"status": "disabled"}
+
     api_key = cfg.get("VIRUSTOTAL_API_KEY")
     if not api_key:
         return {"status": "not_configured"}
+
+    # Caché muy ligera en memoria por hash + TTL, para no repetir
+    # consultas sobre el mismo fichero en una misma instancia.
+    ttl = int(cfg.get("VIRUSTOTAL_CACHE_TTL_SECONDS", 3600) or 0)
+    cache_key = f"__vt_cache_{sha256}"
+    cache_entry = cfg.get(cache_key)
+    now = int(time.time())
+    if isinstance(cache_entry, dict):
+        ts = cache_entry.get("ts")
+        if isinstance(ts, int) and ttl > 0 and now - ts <= ttl:
+            cached_data = cache_entry.get("data")
+            if isinstance(cached_data, dict):
+                return {"status": "cached", **cached_data}
 
     headers = {
         "x-apikey": api_key,
@@ -196,31 +601,50 @@ def _run_virustotal(sha256: str) -> Dict[str, Any]:
         return {"status": "error", "detail": f"error de red VirusTotal: {exc}"}
 
     if resp.status_code == 404:
-        return {"status": "not_found"}
-
-    if not resp.ok:
-        return {
+        data = {"status": "not_found"}
+    elif resp.status_code in {401, 403}:
+        data = {
+            "status": "auth_error",
+            "http_status": resp.status_code,
+            "detail": "API key de VirusTotal inválida o sin permisos para esta operación.",
+        }
+    elif resp.status_code == 429:
+        data = {
+            "status": "rate_limited",
+            "http_status": resp.status_code,
+            "detail": "Límite de peticiones de VirusTotal alcanzado para la API key actual.",
+        }
+    elif not resp.ok:
+        data = {
             "status": "error",
             "http_status": resp.status_code,
             "detail": resp.text[:500],
         }
+    else:
+        try:
+            raw = resp.json()
+        except Exception:  # pragma: no cover
+            data = {"status": "error", "detail": "respuesta no es JSON"}
+        else:
+            stats = (
+                raw.get("data", {})
+                .get("attributes", {})
+                .get("last_analysis_stats", {})
+            )
+            data = {
+                "status": "ok",
+                "stats": stats,
+                "link": f"https://www.virustotal.com/gui/file/{sha256}",
+            }
 
-    try:
-        data = resp.json()
-    except Exception:  # pragma: no cover
-        return {"status": "error", "detail": "respuesta no es JSON"}
+    # Guardamos en caché si hay TTL y el contexto permite mutar config
+    if ttl > 0 and isinstance(cfg, dict):  # type: ignore[redundant-cast]
+        try:
+            cfg[cache_key] = {"ts": now, "data": data}
+        except Exception:
+            pass
 
-    stats = (
-        data.get("data", {})
-        .get("attributes", {})
-        .get("last_analysis_stats", {})
-    )
-    result = {
-        "status": "ok",
-        "stats": stats,
-        "link": f"https://www.virustotal.com/gui/file/{sha256}",
-    }
-    return result
+    return data
 
 
 def _detect_macros(path: Path) -> str:
@@ -978,6 +1402,134 @@ def _extract_lsb_text_from_image(path: Path) -> dict | None:
     return None
 
 
+def _image_lsb_chi_square(path: Path) -> Dict[str, Any] | None:
+    """Simple Chi-square style test over image LSBs.
+
+    This is intentionally lightweight and heuristic: it checks how close
+    the distribution of 0/1 LSBs is to a perfectly uniform 50/50 split.
+
+    Natural images tend to deviate more from perfect uniformity, while
+    naive LSB embedding often moves the distribution towards 50/50.
+
+    The function returns a small dict with statistics and a boolean
+    "suspicious" flag. It never raises and returns None on any error
+    or when dependencies are missing.
+    """
+
+    if Image is None or np is None:
+        return None
+
+    try:
+        with Image.open(path) as img:  # type: ignore[call-arg]
+            img = img.convert("RGB")
+            arr = np.array(img)
+    except Exception:  # pragma: no cover
+        return None
+
+    # Limit the number of pixels to keep the test fast on very large
+    # images. We sample a prefix of the flattened array.
+    max_pixels = 512 * 512
+    flat = arr.reshape(-1, 3)
+    if flat.shape[0] > max_pixels:
+        flat = flat[:max_pixels]
+
+    # Use all three channels' LSBs.
+    lsb = flat & 1
+    bits = lsb.reshape(-1)
+    total = int(bits.size)
+    if total == 0:
+        return None
+
+    zeros = int((bits == 0).sum())
+    ones = total - zeros
+    expected = total / 2.0
+    if expected == 0:
+        return None
+
+    # Chi-square for df=1 between observed (zeros, ones) and expected
+    # (total/2, total/2).
+    chi2 = ((zeros - expected) ** 2) / expected + ((ones - expected) ** 2) / expected
+
+    # Heuristic: if chi2 is very small, the distribution is *too* close
+    # to uniform, which can be an indicator of naive LSB replacement.
+    # Threshold is tuned conservatively to avoid marking everything.
+    suspicious = chi2 < 3.84  # ~p>0.05 for df=1
+
+    return {
+        "zeros": zeros,
+        "ones": ones,
+        "total": total,
+        "chi2": float(chi2),
+        "suspicious": bool(suspicious),
+    }
+
+
+def _image_lsb_rs_analysis(path: Path) -> Dict[str, Any] | None:
+    """Very lightweight RS-style analysis on image LSBs.
+
+    We approximate RS analysis by grouping grayscale pixels and
+    comparing the sum of absolute differences before/after flipping
+    LSBs. When regular and singular groups become very similar, it
+    suggests potential LSB embedding.
+
+    Returns a dict with R/S counts and a "suspicious" flag, or None on
+    error / missing dependencies.
+    """
+
+    if Image is None or np is None:
+        return None
+
+    try:
+        with Image.open(path) as img:  # type: ignore[call-arg]
+            gray = img.convert("L")
+            arr = np.array(gray, dtype=np.uint8)
+    except Exception:  # pragma: no cover
+        return None
+
+    flat = arr.flatten()
+    max_pixels = 512 * 512
+    if flat.size > max_pixels:
+        flat = flat[:max_pixels]
+
+    # We work on groups of 4 pixels.
+    group_size = 4
+    n_groups = flat.size // group_size
+    if n_groups == 0:
+        return None
+
+    data = flat[: n_groups * group_size].reshape(n_groups, group_size).astype(np.int16)
+
+    # Discrimination function: sum of absolute differences between
+    # neighbouring pixels.
+    diffs = np.abs(np.diff(data, axis=1))
+    f_orig = diffs.sum(axis=1)
+
+    # Flip LSBs of all pixels in each group.
+    flipped = data ^ 1
+    diffs_flipped = np.abs(np.diff(flipped, axis=1))
+    f_flip = diffs_flipped.sum(axis=1)
+
+    regular = int((f_orig < f_flip).sum())
+    singular = int((f_orig > f_flip).sum())
+    total_groups = int(n_groups)
+    if total_groups == 0:
+        return None
+
+    # If regular and singular counts are *too* close, that is a
+    # tell-tale sign in the classic RS method. We use a simple
+    # relative delta as heuristic.
+    delta = abs(regular - singular) / max(total_groups, 1)
+    suspicious = delta < 0.02  # less than 2% difference
+
+    return {
+        "regular": regular,
+        "singular": singular,
+        "total_groups": total_groups,
+        "delta": float(delta),
+        "suspicious": bool(suspicious),
+    }
+
+
 def _extract_lsb_text_from_wav(path: Path) -> dict | None:
     """Extrae texto oculto de los bits LSB de audio WAV.
 
@@ -1121,8 +1673,17 @@ def _analyze_steganography(path: Path, mime_type: str) -> tuple[str, Dict[str, A
     is_audio = mime_type.startswith("audio/") or ext in {".wav", ".wave"}
     is_pdf = mime_type == "application/pdf" or ext == ".pdf"
 
+    # Por ahora limitamos el análisis de esteganografía a formatos donde
+    # tiene más sentido práctico (imágenes, audio y PDF). En ejecutables
+    # u otros binarios genéricos es muy frecuente encontrar patrones que
+    # parecen base64 pero no indican realmente esteganografía, lo que
+    # genera falsos positivos y veredictos "suspicious" para ficheros
+    # perfectamente limpios.
+    if not (is_image or is_audio or is_pdf):
+        return ("no", None)
+
     details: Dict[str, Any] = {
-        "category": "image" if is_image else "audio" if is_audio else "pdf" if is_pdf else "other",
+        "category": "image" if is_image else "audio" if is_audio else "pdf",
         "status": "no",
         "methods": [],
         "messages": [],
@@ -1168,6 +1729,50 @@ def _analyze_steganography(path: Path, mime_type: str) -> tuple[str, Dict[str, A
                 )
             details["notes"].append(
                 "Printable content extracted from image LSB channels; steganography is very likely present."
+            )
+
+        # Chi-square / RS statistics are attached both as extra
+        # context when we have a payload and as softer indicators
+        # when no payload was recovered.
+        chi_stats = _image_lsb_chi_square(path)
+        rs_stats = _image_lsb_rs_analysis(path)
+
+        if chi_stats and chi_stats.get("suspicious"):
+            if not lsb_info and status == "no":
+                status = "possible"
+                details["status"] = "suspicious"
+            if "chi_square_lsb" not in details["methods"]:
+                details["methods"].append("chi_square_lsb")
+            # Incluimos siempre los valores numéricos para dar contexto.
+            if not lsb_info:
+                msg = (
+                    "Chi-square LSB test: zeros={zeros}, ones={ones}, total_bits={total}, chi2={chi2:.2f}; "
+                    "LSB distribution very close to uniform, naive LSB embedding is possible."
+                ).format(
+                    zeros=chi_stats.get("zeros"),
+                    ones=chi_stats.get("ones"),
+                    total=chi_stats.get("total"),
+                    chi2=chi_stats.get("chi2", 0.0),
+                )
+            else:
+                msg = (
+                    "Chi-square LSB test suggests LSB embedding (zeros={zeros}, ones={ones}, total_bits={total}, chi2={chi2:.2f})."
+                ).format(
+                    zeros=chi_stats.get("zeros"),
+                    ones=chi_stats.get("ones"),
+                    total=chi_stats.get("total"),
+                    chi2=chi_stats.get("chi2", 0.0),
+                )
+            details["notes"].append(msg)
+
+        if rs_stats and rs_stats.get("suspicious"):
+            if not lsb_info and status == "no":
+                status = "possible"
+                details["status"] = "suspicious"
+            if "rs_analysis" not in details["methods"]:
+                details["methods"].append("rs_analysis")
+            details["notes"].append(
+                "RS analysis shows regular/singular groups are unusually balanced; LSB steganography is possible."
             )
 
     # 1b) LSB-style extraction for WAV audio
@@ -1285,11 +1890,6 @@ def _analyze_steganography(path: Path, mime_type: str) -> tuple[str, Dict[str, A
         if "size_heuristic" not in details["methods"]:
             details["methods"].append("size_heuristic")
 
-    # Si seguimos sin nada relevante y el tipo no tiene análisis específico,
-    # devolvemos None en los detalles para no ensuciar metadatos.
-    if status == "no" and details["category"] == "other":
-        return ("no", None)
-
     return (status, details or None)
 
 
@@ -1314,6 +1914,179 @@ def _extract_basic_metadata(path: Path, mime_type: str) -> Dict[str, Any]:
             pass
 
     return meta
+
+
+def _extract_document_text_via_tika(path: Path, mime_type: str) -> Dict[str, Any] | None:
+    """Extrae texto y metadatos de documentos usando Apache Tika.
+
+    Esta función actúa como un pequeño adaptador frente a un servidor
+    Apache Tika accesible vía HTTP. Si la integración está desactivada
+    en configuración o el servidor no responde, devuelve ``None`` para
+    no interferir con el resto del pipeline.
+
+    El resultado está pensado para almacenarse bajo
+    ``additional_results['document_text']`` y tener esta forma
+    aproximada:
+
+    {
+        "status": "ok" | "error",
+        "engine": "tika",
+        "content_preview": str | None,
+        "content_length": int | None,
+        "content_truncated": bool,
+        "content_full": str | None,
+        "metadata": {"key": "value", ...},
+        "error": str | None,
+    }
+    """
+
+    cfg = current_app.config if current_app else {}
+    if not cfg.get("TIKA_ENABLED", False):
+        return None
+
+    base_url = str(cfg.get("TIKA_SERVER_URL") or "").strip()
+    if not base_url:
+        return None
+
+    timeout = int(cfg.get("TIKA_TIMEOUT_SECONDS", 30) or 30)
+    max_chars = int(cfg.get("TIKA_MAX_TEXT_CHARS", 20000) or 0)
+
+    base_url = base_url.rstrip("/")
+    text_url = base_url + "/tika"
+    meta_url = base_url + "/meta"
+
+    text_content: str | None = None
+    meta_data: dict[str, Any] | None = None
+    errors: list[str] = []
+
+    # Primera petición: contenido de texto plano
+    try:
+        with path.open("rb") as fh:  # pragma: no cover - E/S remota
+            resp = requests.put(
+                text_url,
+                data=fh,
+                headers={"Accept": "text/plain"},
+                timeout=timeout,
+            )
+        if resp.ok:
+            text_content = (resp.text or "").strip()
+        else:
+            errors.append(f"Tika text HTTP {resp.status_code}")
+    except Exception as exc:  # pragma: no cover - errores de red/API
+        errors.append(f"Tika text error: {exc}")
+
+    # Segunda petición: metadatos en JSON
+    try:
+        with path.open("rb") as fh:  # pragma: no cover - E/S remota
+            resp = requests.put(
+                meta_url,
+                data=fh,
+                headers={"Accept": "application/json"},
+                timeout=timeout,
+            )
+        if resp.ok:
+            try:
+                parsed = resp.json()
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                meta_data = parsed
+        else:
+            errors.append(f"Tika meta HTTP {resp.status_code}")
+    except Exception as exc:  # pragma: no cover
+        errors.append(f"Tika meta error: {exc}")
+
+    if text_content is None and meta_data is None:
+        if not errors:
+            return None
+        return {
+            "status": "error",
+            "engine": "tika",
+            "content_preview": None,
+            "content_length": None,
+            "content_truncated": False,
+            "content_full": None,
+            "metadata": None,
+            "error": "; ".join(errors)[:500],
+        }
+
+    text_content = (text_content or "").strip()
+    length = len(text_content) if text_content else None
+
+    if max_chars and text_content and length and length > max_chars:
+        full = text_content[:max_chars]
+        truncated = True
+    else:
+        full = text_content or None
+        truncated = False
+
+    preview = None
+    if full:
+        preview = full[:1000]
+
+    # Normalizamos metadatos para evitar estructuras profundas y ruido.
+    # Nos quedamos con un subconjunto "forensemente" interesante en una
+    # whitelist y ordenado.
+    simple_meta: dict[str, Any] | None = None
+    if isinstance(meta_data, dict):
+        # Lista de claves que suelen aportar valor en análisis de
+        # documentos. Se muestran en este orden cuando estén
+        # disponibles; el resto se ignora para no saturar el informe.
+        preferred_keys: list[str] = [
+            "dc:creator",
+            "meta:last-author",
+            "dcterms:created",
+            "dcterms:modified",
+            "Content-Type",
+            "language",
+            "meta:page-count",
+            "xmpTPg:NPages",
+            "meta:word-count",
+            "meta:character-count",
+            "meta:character-count-with-spaces",
+            "meta:paragraph-count",
+            "meta:line-count",
+            "extended-properties:Application",
+            "extended-properties:AppVersion",
+            "extended-properties:Company",
+            "extended-properties:Template",
+            "extended-properties:TotalTime",
+        ]
+
+        buffer: dict[str, Any] = {}
+        for k, v in meta_data.items():
+            if k not in preferred_keys:
+                continue
+            try:
+                vs = str(v)
+            except Exception:
+                continue
+            if len(vs) > 2000:
+                continue
+            buffer[str(k)] = vs
+
+        if buffer:
+            # Respetamos el orden de preferred_keys y sólo añadimos
+            # aquellas claves que efectivamente estén presentes.
+            simple_meta = {k: buffer[k] for k in preferred_keys if k in buffer}
+
+        if not simple_meta:
+            simple_meta = None
+
+    result: dict[str, Any] = {
+        "status": "ok",
+        "engine": "tika",
+        "content_preview": preview,
+        "content_length": length,
+        "content_truncated": bool(truncated),
+        "content_full": full,
+        "metadata": simple_meta,
+    }
+
+    if errors:
+        result["error"] = "; ".join(errors)[:500]
+
+    return result
 
 
 def _decide_verdict(
@@ -1353,6 +2126,19 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
     macro = _detect_macros(path)
     stego_status, stego_info = _analyze_steganography(path, mime_type)
 
+    # Integración con sandbox dinámico (hook). El resultado se usa para
+    # rellenar sandbox_score y se adjunta completo en additional_results
+    # bajo la clave "sandbox" para que los informes puedan mostrar
+    # detalles adicionales (tags, familia, resumen, etc.).
+    sandbox_result = _run_sandbox(path, mime_type)
+    sandbox_score: float | None = None
+    if isinstance(sandbox_result, dict):
+        try:
+            val = sandbox_result.get("score")
+            sandbox_score = float(val) if val is not None else None
+        except Exception:  # pragma: no cover
+            sandbox_score = None
+
     audio_analysis = ""
     # Audio avanzado sólo para WAV/WAVE, para alinearlo con la
     # detección de esteganografía basada en LSB y evitar MP3.
@@ -1360,6 +2146,27 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
         audio_analysis = _analyze_audio(path, mime_type)
 
     metadata = _extract_basic_metadata(path, mime_type)
+
+    # Extracción opcional de texto y metadatos ricos de documentos
+    # (PDF, Office, etc.) mediante Apache Tika. Se limita a tipos de
+    # fichero donde esta información aporta valor práctico.
+    ext = path.suffix.lower()
+    is_pdf = mime_type == "application/pdf" or ext == ".pdf"
+    is_office = ext in {
+        ".doc",
+        ".docx",
+        ".docm",
+        ".xls",
+        ".xlsx",
+        ".xlsm",
+        ".ppt",
+        ".pptx",
+        ".pptm",
+    }
+    if is_pdf or is_office:
+        doc_text = _extract_document_text_via_tika(path, mime_type)
+        if doc_text:
+            metadata["document_text"] = doc_text
 
     # Detalles de macros (si existen) se guardan en additional_results
     macro_details = _extract_macro_details(path)
@@ -1379,6 +2186,12 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
     if stego_info:
         metadata["steganography"] = stego_info
 
+    # Attach sandbox dynamic analysis information (if any) into
+    # additional_results so that reports can render a dedicated block
+    # without modificar el esquema de base de datos.
+    if sandbox_result:
+        metadata["sandbox"] = sandbox_result
+
     # VirusTotal: trabajamos sólo con el hash para no subir archivos.
     vt_result = _run_virustotal(hashes["sha256"]) if hashes.get("sha256") else {"status": "no_hash"}
     verdict = _decide_verdict(clam, yara_matches, macro, stego_status)
@@ -1392,10 +2205,12 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
         summary_parts.append("Macros sospechosas detectadas")
     if stego_status in {"possible", "yes"}:
         summary_parts.append("Indicadores de esteganografía detectados")
+    if sandbox_score is not None:
+        summary_parts.append(f"Sandbox score: {sandbox_score}")
 
     cfg = current_app.config if current_app else {}
-    engine_version = str(cfg.get("FORENHUB_ENGINE_VERSION", "1.0"))
-    ruleset_version = str(cfg.get("FORENHUB_RULESET_VERSION", "default"))
+    engine_version = str(cfg.get("FORENALYZE_ENGINE_VERSION", "1.0"))
+    ruleset_version = str(cfg.get("FORENALYZE_RULESET_VERSION", "default"))
 
     return {
         **hashes,
@@ -1406,7 +2221,7 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
         "macro_detected": macro,
         "stego_detected": stego_status,
         "audio_analysis": audio_analysis or None,
-        "sandbox_score": None,
+        "sandbox_score": sandbox_score,
         "final_verdict": verdict,
         "summary": "; ".join(summary_parts),
         "engine_version": engine_version,

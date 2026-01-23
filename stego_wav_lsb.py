@@ -7,7 +7,7 @@ from pathlib import Path
 def embed_message_lsb(input_wav: Path, output_wav: Path, message: str) -> None:
     """Embed *message* into the LSB of samples in a WAV file.
 
-    This uses the same pattern that the ForenHub pipeline expects when
+    This uses the same pattern that the Forenalyze pipeline expects when
     extracting from audio:
 
     - Work on the raw frame bytes as returned by wave.readframes.
@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Embed a secret message into a WAV file using simple LSB "
-            "steganography compatible with ForenHub's audio analyzer."
+            "steganography compatible with Forenalyze's audio analyzer."
         )
     )
     parser.add_argument("input", type=str, help="Input WAV file (8/16-bit PCM).")

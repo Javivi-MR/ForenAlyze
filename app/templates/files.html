@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Files · ForenHub{% endblock %}
+{% block title %}Files & analyses · Forenalyze{% endblock %}
 
 {% block subnav %}
 <nav class="subnav">
@@ -10,16 +10,19 @@
         <a class="nav-link" href="/dashboard">Dashboard</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link active" href="/files">Files</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link" href="/analysis">Analyses</a>
+  		<a class="nav-link active" href="/files">Files &amp; analyses</a>
       </li>
       <li class="nav-item">
         <a class="nav-link" href="/logs">Logs</a>
       </li>
       <li class="nav-item">
         <a class="nav-link" href="/storage">Storage</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('dashboard.yara_rules_index') }}">YARA rules</a>
+      </li>
+      <li class="nav-item ms-auto">
+        <a class="nav-link" href="/upload">Upload file</a>
       </li>
     </ul>
   </div>
@@ -28,17 +31,13 @@
 
 {% block content %}
 <div class="container-fluid py-3 py-lg-4 dashboard-page">
+  {% set tab = active_tab or 'files' %}
   <div class="row mb-3 align-items-center">
     <div class="col">
-      <h1 class="h4 mb-0">Uploaded files</h1>
+      <h1 class="h4 mb-0">Files & analyses</h1>
       <p class="small text-muted mb-0">
-        Centralised view of all files sent to ForenHub.
+        Unified view of uploaded files and their completed analyses.
       </p>
-    </div>
-    <div class="col-auto">
-      <a href="/upload" class="btn btn-primary btn-sm">
-        Upload file
-      </a>
     </div>
   </div>
 
@@ -46,6 +45,17 @@
     <div class="alert alert-danger">{{ error }}</div>
   {% endif %}
 
+  <!-- Tabs for Files / Analyses -->
+  <ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+      <a class="nav-link {% if tab == 'files' %}active{% endif %}" href="{{ url_for('dashboard.files', tab='files') }}">Files</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if tab == 'analyses' %}active{% endif %}" href="{{ url_for('dashboard.files', tab='analyses') }}">Analyses</a>
+    </li>
+  </ul>
+
+  {% if tab == 'files' %}
   <div class="card bg-dark text-light">
     <div class="card-header border-0 d-flex justify-content-between align-items-center">
       <span class="fw-semibold">Files list</span>
@@ -90,7 +100,7 @@
                 </span>
               </td>
               <td class="small text-nowrap">
-                {{ f.upload_date }}
+                {{ f.upload_date or '' }}
               </td>
               <td class="text-center">
                 <button
@@ -131,6 +141,97 @@
       </table>
     </div>
   </div>
+
+  {% else %}
+  <div class="card bg-dark text-light">
+    <div class="card-header border-0 d-flex justify-content-between align-items-center">
+      <span class="fw-semibold">Analysis list</span>
+      <span class="small text-muted">
+        Total: {{ analyses|length if analyses is defined else 0 }}
+      </span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-dark table-hover table-sm align-middle mb-0" id="analysis-table">
+        <thead class="small text-uppercase text-muted">
+          <tr>
+            <th>Date</th>
+            <th>File</th>
+            <th>Type</th>
+            <th>Size</th>
+            <th>SHA256</th>
+            <th>Status</th>
+            <th>Detections</th>
+            <th>User</th>
+            <th class="text-end">Report</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if analyses and analyses|length > 0 %}
+            {% for a in analyses %}
+            <tr>
+              <td class="small text-nowrap">
+                {{ a.analyzed_at or '' }}
+              </td>
+              <td class="text-truncate" style="max-width: 200px;">
+                {{ a.filename_original }}
+              </td>
+              <td class="small">
+                {{ a.file_type or a.mime_type }}
+              </td>
+              <td class="small">
+                {{ a.size_human or '' }}
+              </td>
+              <td class="small text-truncate" style="max-width: 220px;">
+                {{ a.sha256 or '' }}
+              </td>
+              <td>
+                {% set v = a.final_verdict %}
+                <span class="badge
+                  {% if v == 'clean' %} bg-success
+                  {% elif v == 'suspicious' %} bg-warning text-dark
+                  {% elif v == 'malicious' %} bg-danger
+                  {% elif v == 'critical' %} bg-danger text-light
+                  {% else %} bg-secondary{% endif %}">
+                  {{ v or 'N/D' }}
+                </span>
+              </td>
+              <td class="small">
+                {% if a.has_clamav %}
+                  <span class="badge bg-secondary me-1">ClamAV</span>
+                {% endif %}
+                {% if a.has_yara %}
+                  <span class="badge bg-info text-dark me-1">YARA</span>
+                {% endif %}
+                {% if a.macro_detected == 'yes' %}
+                  <span class="badge bg-warning text-dark me-1">Macros</span>
+                {% endif %}
+                {% if a.stego_detected == 'possible' %}
+                  <span class="badge bg-warning text-dark me-1">Stego</span>
+                {% endif %}
+                {% if a.has_audio %}
+                  <span class="badge bg-primary me-1">Audio</span>
+                {% endif %}
+              </td>
+              <td class="small">
+                {{ a.user_username }}
+              </td>
+              <td class="text-end">
+                <a href="/analysis/{{ a.id }}/report" class="btn btn-outline-secondary btn-sm">View report</a>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="9" class="text-center text-muted py-4">
+                There are no analyses available yet.
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- Modal de metadatos -->
   <div class="modal fade" id="fileMetaModal" tabindex="-1" aria-labelledby="fileMetaModalLabel" aria-hidden="true">

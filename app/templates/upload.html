@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Upload file · ForenHub{% endblock %}
+{% block title %}Upload file · Forenalyze{% endblock %}
 
 {% block subnav %}
 <nav class="subnav">
@@ -10,7 +10,16 @@
         <a class="nav-link" href="/dashboard">Dashboard</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" href="/files">Files</a>
+        <a class="nav-link" href="/files">Files & analyses</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/logs">Logs</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/storage">Storage</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('dashboard.yara_rules_index') }}">YARA rules</a>
       </li>
       <li class="nav-item ms-auto">
         <a class="nav-link active" href="/upload">Upload file</a>

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard · ForenHub{% endblock %}
+{% block title %}Dashboard · Forenalyze{% endblock %}
 
 {% block subnav %}
 <nav class="subnav">
@@ -10,16 +10,16 @@
         <a class="nav-link active" href="/dashboard">Dashboard</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" href="/files">Files</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link" href="/analysis">Analyses</a>
+        <a class="nav-link" href="/files">Files & analyses</a>
       </li>
       <li class="nav-item">
         <a class="nav-link" href="/logs">Logs</a>
       </li>
       <li class="nav-item">
         <a class="nav-link" href="/storage">Storage</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('dashboard.yara_rules_index') }}">YARA rules</a>
       </li>
       <!-- Direct link to upload section -->
       <li class="nav-item ms-auto">
@@ -249,12 +249,11 @@
                   </span>
                 </td>
                 <td class="text-end">
-                  <div class="btn-group btn-group-sm">
-                    <a href="/files/{{ item.id }}" class="btn btn-outline-secondary">View</a>
-                    {% if item.analysis_id %}
-                    <a href="/analysis/{{ item.analysis_id }}/report" class="btn btn-outline-secondary">Report</a>
-                    {% endif %}
-                  </div>
+                  {% if item.analysis_id %}
+                  <a href="/analysis/{{ item.analysis_id }}/report" class="btn btn-outline-secondary btn-sm">Report</a>
+                  {% else %}
+                  <span class="text-muted small">No report</span>
+                  {% endif %}
                 </td>
               </tr>
               {% else %}
@@ -276,7 +275,7 @@
 {% block extra_js %}
 <script>
   // Datos iniciales para Chart.js generados en el backend
-  window.FORENHUB_DASHBOARD_DATA = {{ dashboard_data | tojson }};
+  window.FORENALYZE_DASHBOARD_DATA = {{ dashboard_data | tojson }};
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>

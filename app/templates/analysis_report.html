@@ -1,17 +1,44 @@
 {% extends "base.html" %}
 
-{% block title %}Analysis report · ForenHub{% endblock %}
+{% block title %}Analysis report · Forenalyze{% endblock %}
 
 {% block subnav %}
 <nav class="subnav">
   <div class="container-fluid">
     <ul class="nav">
+      <!-- Left: main sections -->
       <li class="nav-item">
         <a class="nav-link" href="/dashboard">Dashboard</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" href="/files">Files</a>
+        <a class="nav-link" href="/files">Files & analyses</a>
       </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/logs">Logs</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/storage">Storage</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('dashboard.yara_rules_index') }}">YARA rules</a>
+      </li>
+
+      <!-- Right: report actions + upload -->
+      <li class="nav-item ms-auto">
+        <a class="nav-link" href="{{ url_for('dashboard.analysis_export_json', analysis_id=analysis.id) }}">Download JSON</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('dashboard.analysis_export_pdf', analysis_id=analysis.id) }}">Download PDF</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/upload">Upload file</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+{% endblock %}
+
+{% block content %}
 <script>
 // Steganography payload modal: fetch full payload and show it inline
 document.addEventListener('DOMContentLoaded', function () {
@@ -77,17 +104,6 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 });
 </script>
-        <a class="nav-link" href="/logs">Logs</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link" href="/storage">Storage</a>
-      </li>
-    </ul>
-  </div>
-</nav>
-{% endblock %}
-
-{% block content %}
 <div class="container-fluid py-3 py-lg-4 dashboard-page">
   <div class="row g-3 g-lg-4">
     <!-- Left column: main information -->
@@ -352,16 +368,98 @@ document.addEventListener('DOMContentLoaded', function () {
               </div>
             </div>
             <div class="col-md-4">
-              <div class="text-muted">Audio</div>
+              <div class="text-muted">Sandbox</div>
               <div>
-                {% if audio_info %}
-                  <span class="badge bg-primary">Metadata available</span>
+                {% if analysis.sandbox_score is not none %}
+                  <span class="badge bg-primary">Score: {{ '%.1f'|format(analysis.sandbox_score) }}</span>
                 {% else %}
                   <span class="badge bg-secondary">No data</span>
                 {% endif %}
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <div>
+            <span class="fw-semibold">Sandbox / dynamic analysis</span>
+            <div class="small text-muted">Integration hook for external sandbox engines (e.g. Cuckoo)</div>
+          </div>
+        </div>
+        <div class="card-body small">
+          {% set sandbox = additional_meta.get('sandbox') if additional_meta is mapping else None %}
+          {% if sandbox %}
+            <div class="mb-2">
+              <span class="text-muted">Status:</span>
+              <span class="fw-semibold">{{ sandbox.status or 'N/D' }}</span>
+              {% if sandbox.engine %}
+                <span class="ms-2 text-muted">Engine:</span>
+                <span class="fw-semibold">{{ sandbox.engine }}</span>
+              {% endif %}
+              {% if analysis.sandbox_score is not none %}
+                <span class="ms-2 text-muted">Score:</span>
+                <span class="badge bg-primary">{{ '%.1f'|format(analysis.sandbox_score) }}</span>
+              {% endif %}
+              {% if sandbox.verdict %}
+                {% set sv = (sandbox.verdict or '')|lower %}
+                <span class="ms-2 text-muted">Verdict:</span>
+                <span class="badge
+                  {% if sv == 'malicious' %} bg-danger
+                  {% elif sv in ['suspicious', 'unknown'] %} bg-warning text-dark
+                  {% elif sv in ['benign', 'clean'] %} bg-success
+                  {% else %} bg-secondary{% endif %}">
+                  {{ sandbox.verdict }}
+                </span>
+              {% endif %}
+            </div>
+
+            {% if sandbox.report_url %}
+            <div class="mb-3">
+              <a href="{{ sandbox.report_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-info">
+                Open in Hybrid Analysis
+              </a>
+            </div>
+            {% endif %}
+
+            {% if sandbox.malware_family %}
+            <div class="mb-2">
+              <span class="text-muted">Malware family:</span>
+              <span class="fw-semibold">{{ sandbox.malware_family }}</span>
+            </div>
+            {% endif %}
+
+            {% if sandbox.tags %}
+            <div class="mb-2">
+              <span class="text-muted">Tags:</span>
+              {% for tag in sandbox.tags %}
+                <span class="badge bg-secondary ms-1">{{ tag }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if sandbox.summary %}
+            <div class="mb-0">
+              <div class="text-muted mb-1">Summary</div>
+              <p class="mb-0">{{ sandbox.summary }}</p>
+            </div>
+            {% endif %}
+
+            {% if not sandbox.summary and not sandbox.tags %}
+              <p class="text-muted mb-0">Sandbox integration hook is enabled but only minimal metadata is available for this analysis.</p>
+            {% endif %}
+          {% else %}
+            {% if analysis.sandbox_score is not none %}
+              <p class="mb-0">
+                A sandbox score ({{ '%.1f'|format(analysis.sandbox_score) }}) is recorded for this analysis, but no additional sandbox metadata has been attached.
+              </p>
+            {% else %}
+              <p class="text-muted mb-0">
+                No sandbox/dynamic analysis data is available. In this TFM, the sandbox integration is designed as an external hook (e.g. to Cuckoo) and can be enabled via configuration.
+              </p>
+            {% endif %}
+          {% endif %}
         </div>
       </div>
 
@@ -472,11 +570,145 @@ document.addEventListener('DOMContentLoaded', function () {
             engine could not extract the VBA code.
           </p>
           <p class="text-muted mb-0">
-            To view the VBA source code directly in ForenHub, ensure that <code>oletools</code>
+            To view the VBA source code directly in Forenalyze, ensure that <code>oletools</code>
             (olevba) is installed in the analysis environment and that the document is not
             corrupted. Once available, new analyses will include module previews and full
             macro code in this section.
           </p>
+        </div>
+      </div>
+      {% endif %}
+
+      {#
+        Bloque dedicado al contenido de documentos (PDF / Office)
+        extraído mediante Apache Tika cuando hay información
+        disponible en additional_meta['document_text'].
+      #}
+      {% set doc_text = additional_meta.get('document_text') if additional_meta is mapping else None %}
+      {% if doc_text %}
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <div>
+            <span class="fw-semibold">Document content (Apache Tika)</span>
+            <div class="small text-muted">Extracted visible text and rich metadata from PDF/Office documents</div>
+          </div>
+        </div>
+        <div class="card-body small">
+          <div class="mb-2">
+            <span class="text-muted">Status:</span>
+            <span class="badge
+              {% if doc_text.status == 'ok' %} bg-success
+              {% elif doc_text.status == 'error' %} bg-warning text-dark
+              {% else %} bg-secondary{% endif %}">
+              {{ doc_text.status or 'N/D' }}
+            </span>
+            {% if doc_text.engine %}
+              <span class="ms-2 text-muted">Engine:</span>
+              <span class="fw-semibold">{{ doc_text.engine }}</span>
+            {% endif %}
+          </div>
+
+          {% if doc_text.error %}
+          <p class="text-muted mb-2">{{ doc_text.error }}</p>
+          {% endif %}
+
+          {% if doc_text.metadata %}
+          <div class="mb-3">
+            <h6 class="small text-muted text-uppercase mb-1">Document metadata</h6>
+            <dl class="row mb-0">
+              {% for k, v in doc_text.metadata.items() %}
+              <dt class="col-sm-4 text-muted">{{ k }}</dt>
+              <dd class="col-sm-8 mb-1">{{ v }}</dd>
+              {% endfor %}
+            </dl>
+          </div>
+          {% endif %}
+
+          {% if doc_text.content_preview %}
+          <div>
+            <h6 class="small text-muted text-uppercase mb-1">Extracted text (preview)</h6>
+            <div class="border border-secondary rounded p-2 bg-black bg-opacity-25" style="max-height: 260px; overflow:auto;">
+              <pre class="small mb-0" style="white-space:pre-wrap;">{{ doc_text.content_preview }}</pre>
+            </div>
+            {% if doc_text.content_truncated %}
+            <p class="small text-muted mt-1 mb-0">
+              Visible document text has been truncated to keep the report compact. The analysis engine stores only the first
+              {{ doc_text.content_full|length if doc_text.content_full else 'N' }} characters extracted by Apache Tika.
+            </p>
+            {% endif %}
+          </div>
+          {% else %}
+          <p class="text-muted mb-0">No visible text has been extracted from this document by Apache Tika.</p>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      {#
+        Bloque dedicado a metadatos de audio extraídos con mutagen
+        (duración, bitrate, etiquetas típicas) y, si existe, el
+        espectrograma generado para WAV. Sólo se muestra cuando
+        disponemos de un dict con metadatos estructurados.
+      #}
+      {% if audio_info is mapping %}
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <div>
+            <span class="fw-semibold">Audio metadata (Mutagen)</span>
+            <div class="small text-muted">Basic audio properties and common tags extracted from the file</div>
+          </div>
+        </div>
+        <div class="card-body small">
+          <div class="row mb-2">
+            <div class="col-md-4">
+              <div class="text-muted">Duration</div>
+              <div>
+                {% if audio_info.duration_seconds is not none %}
+                  {{ '%.1f'|format(audio_info.duration_seconds) }} s
+                {% else %}
+                  N/D
+                {% endif %}
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted">Bitrate</div>
+              <div>
+                {% if audio_info.bitrate is not none %}
+                  {{ audio_info.bitrate }} bps
+                {% else %}
+                  N/D
+                {% endif %}
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted">MIME type</div>
+              <div>{{ audio_info.mime_type or analysis.mime_type or 'N/D' }}</div>
+            </div>
+          </div>
+
+          <div class="row mb-2">
+            <div class="col-md-4">
+              <div class="text-muted">Artist</div>
+              <div>{{ audio_info.artist or 'N/D' }}</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted">Album</div>
+              <div>{{ audio_info.album or 'N/D' }}</div>
+            </div>
+            <div class="col-md-4">
+              <div class="text-muted">Title</div>
+              <div>{{ audio_info.title or 'N/D' }}</div>
+            </div>
+          </div>
+
+          {% if audio_spectrogram %}
+          <div class="mt-3">
+            <h6 class="small text-muted text-uppercase mb-1">Audio spectrogram (preview)</h6>
+            <img src="{{ url_for('static', filename=audio_spectrogram) }}"
+                 alt="Audio spectrogram"
+                 class="img-fluid rounded border border-secondary bg-black bg-opacity-25">
+          </div>
+          {% endif %}
         </div>
       </div>
       {% endif %}
@@ -498,15 +730,16 @@ document.addEventListener('DOMContentLoaded', function () {
         </div>
         <div class="card-body small">
           {% if stego_details %}
+            {% set stego_status = stego_details.status or analysis.stego_detected %}
             <div class="mb-2">
-              {% if stego_details.status == 'found' %}
+              {% if stego_status == 'found' or stego_status == 'yes' %}
                 <span class="badge bg-danger">Hidden content detected</span>
-              {% elif stego_details.status == 'suspicious' %}
+              {% elif stego_status == 'suspicious' or stego_status == 'possible' %}
                 <span class="badge bg-warning text-dark">Suspicious patterns</span>
-              {% elif stego_details.status == 'not_found' %}
+              {% elif stego_status == 'not_found' or stego_status == 'no' %}
                 <span class="badge bg-success">No hidden content found</span>
               {% else %}
-                <span class="badge bg-secondary">Analysis status: {{ stego_details.status }}</span>
+                <span class="badge bg-secondary">Analysis status: {{ stego_status or 'unknown' }}</span>
               {% endif %}
 
               {% if stego_details.methods %}
@@ -647,18 +880,20 @@ document.addEventListener('DOMContentLoaded', function () {
           {% if additional_meta and additional_meta|length > 0 %}
             <dl class="row mb-0">
               {% for key, value in additional_meta.items() %}
-              <dt class="col-sm-3 text-muted">{{ key }}</dt>
-              <dd class="col-sm-9 mb-1">
-                {% if key == 'audio_spectrogram' and value %}
-                  <img src="{{ url_for('static', filename=value) }}"
-                       alt="Audio spectrogram"
-                       class="img-fluid rounded border border-secondary bg-black bg-opacity-25">
-                {% elif value is mapping or value is sequence and not value is string %}
-                  <code class="small">{{ value }}</code>
-                {% else %}
-                  {{ value }}
-                {% endif %}
-              </dd>
+              {% if key not in ['macro_details', 'steganography', 'sandbox', 'document_text'] %}
+                <dt class="col-sm-3 text-muted">{{ key }}</dt>
+                <dd class="col-sm-9 mb-1">
+                  {% if key == 'audio_spectrogram' and value %}
+                    <img src="{{ url_for('static', filename=value) }}"
+                         alt="Audio spectrogram"
+                         class="img-fluid rounded border border-secondary bg-black bg-opacity-25">
+                  {% elif value is mapping or value is sequence and not value is string %}
+                    <code class="small">{{ value }}</code>
+                  {% else %}
+                    {{ value }}
+                  {% endif %}
+                </dd>
+              {% endif %}
               {% endfor %}
             </dl>
           {% else %}

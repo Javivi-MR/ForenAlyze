@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Edit YARA rule · Forenalyze{% endblock %}
+
+{% block subnav %}
+<nav class="subnav">
+  <div class="container-fluid">
+    <ul class="nav">
+      <li class="nav-item">
+        <a class="nav-link" href="/dashboard">Dashboard</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/files">Files & analyses</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/logs">Logs</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/storage">Storage</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link active" href="{{ url_for('dashboard.yara_rules_index') }}">YARA rules</a>
+      </li>
+      <li class="nav-item ms-auto">
+        <span class="nav-link disabled">Edit rule</span>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/upload">Upload file</a>
+      </li>
+    </ul>
+  </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 py-lg-4 dashboard-page">
+  <div class="row g-3 g-lg-4">
+    <div class="col-lg-10 col-xl-8">
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <div>
+            <span class="fw-semibold">Edit YARA rule file</span>
+            <div class="small text-muted text-truncate" style="max-width: 480px;" title="{{ file_path }}">
+              {{ rel_path }}
+            </div>
+          </div>
+          <a href="{{ url_for('dashboard.yara_rules_index') }}" class="btn btn-sm btn-outline-secondary">Back to list</a>
+        </div>
+        <div class="card-body small">
+          <form method="post" action="{{ url_for('dashboard.yara_rule_edit') }}">
+            <input type="hidden" name="path" value="{{ rel_path }}">
+            <div class="mb-3">
+              <label for="content" class="form-label small text-muted">Rule file content</label>
+              <textarea id="content" name="content" class="form-control form-control-sm bg-black text-light border-secondary" rows="24" spellcheck="false" style="font-family: monospace;">{{ content }}</textarea>
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+              <p class="small text-muted mb-0">Changes will take effect for new analyses after the next YARA compilation.</p>
+              <button type="submit" class="btn btn-primary btn-sm">Save changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

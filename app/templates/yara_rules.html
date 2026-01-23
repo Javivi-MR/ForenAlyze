@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}YARA rules · Forenalyze{% endblock %}
+
+{% block subnav %}
+<nav class="subnav">
+  <div class="container-fluid">
+  <ul class="nav">
+    <li class="nav-item">
+    <a class="nav-link" href="/dashboard">Dashboard</a>
+    </li>
+    <li class="nav-item">
+    <a class="nav-link" href="/files">Files & analyses</a>
+    </li>
+    <li class="nav-item">
+    <a class="nav-link" href="/logs">Logs</a>
+    </li>
+    <li class="nav-item">
+    <a class="nav-link" href="/storage">Storage</a>
+    </li>
+    <li class="nav-item">
+    <a class="nav-link active" href="{{ url_for('dashboard.yara_rules_index') }}">YARA rules</a>
+    </li>
+    <li class="nav-item ms-auto">
+    <a class="nav-link" href="/upload">Upload file</a>
+    </li>
+  </ul>
+  </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3 py-lg-4 dashboard-page">
+  <div class="row g-3 g-lg-4">
+    <div class="col-lg-8">
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0 d-flex justify-content-between align-items-center">
+          <div>
+            <span class="fw-semibold">YARA rules</span>
+            <div class="small text-muted">Current rules used by the analysis engine</div>
+            <div class="small text-muted">ES: Aquí puedes ver, editar y AÑADIR reglas YARA.</div>
+          </div>
+          {% if is_dir %}
+          <form class="d-inline-flex align-items-center" method="post" action="{{ url_for('dashboard.yara_rule_upload') }}" enctype="multipart/form-data">
+            <label class="btn btn-sm btn-outline-secondary me-2 mb-0">
+              <span>Upload new rule file</span>
+              <input type="file" name="rule_file" accept=".yar,.yara,.rule" hidden onchange="this.form.submit();">
+            </label>
+          </form>
+          {% endif %}
+        </div>
+        <div class="card-body small">
+          {% if not rules_root %}
+            <p class="text-muted mb-0">YARA is disabled or YARA_RULES_PATH is not correctly configured.</p>
+          {% elif rules and rules|length > 0 %}
+            <div class="small text-muted mb-2">
+              Rules path: <code>{{ rules_root }}</code>
+              {% if is_dir %}
+                (directory) – To ADD a new rule, upload a new <code>.yar</code>/<code>.yara</code>/<code>.rule</code> file with the button above.
+              {% else %}
+                (single rules file) – To ADD rules, open it with "Edit" and write or paste new YARA rules inside.
+              {% endif %}
+            </div>
+            <div class="table-responsive">
+              <table class="table table-dark table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">Rule file</th>
+                    <th scope="col" style="width: 120px;">Size</th>
+                    <th scope="col" style="width: 200px;">Last modified</th>
+                    <th scope="col" style="width: 160px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for r in rules %}
+                  <tr>
+                    <td>
+                      <a href="{{ url_for('dashboard.yara_rule_edit', path=r.name) }}" class="link-light text-decoration-none">
+                        {{ r.name }}
+                      </a>
+                    </td>
+                    <td>{{ (r.size / 1024)|round(1) }} KB</td>
+                    <td>{{ r.mtime }}</td>
+                    <td>
+                      <a href="{{ url_for('dashboard.yara_rule_edit', path=r.name) }}" class="btn btn-sm btn-outline-secondary me-1">Edit</a>
+                      {% if is_dir %}
+                      <form method="post" action="{{ url_for('dashboard.yara_rule_delete') }}" class="d-inline" onsubmit="return confirm('Delete this YARA rule file?');">
+                        <input type="hidden" name="path" value="{{ r.name }}">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                      </form>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p class="text-muted mb-0">No YARA rule files have been found under the configured path.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

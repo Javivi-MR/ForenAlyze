@@ -1,5 +1,5 @@
 (() => {
-  const data = window.FORENHUB_DASHBOARD_DATA || {};
+  const data = window.FORENALYZE_DASHBOARD_DATA || {};
 
   if (typeof Chart === "undefined") {
     return;

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Logs · ForenHub{% endblock %}
+{% block title %}Logs · Forenalyze{% endblock %}
 
 {% block subnav %}
 <nav class="subnav">
@@ -10,16 +10,19 @@
         <a class="nav-link" href="/dashboard">Dashboard</a>
       </li>
       <li class="nav-item">
-        <a class="nav-link" href="/files">Files</a>
-      </li>
-      <li class="nav-item">
-        <a class="nav-link" href="/analysis">Analyses</a>
+        <a class="nav-link" href="/files">Files & analyses</a>
       </li>
       <li class="nav-item">
         <a class="nav-link active" href="/logs">Logs</a>
       </li>
       <li class="nav-item">
         <a class="nav-link" href="/storage">Storage</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('dashboard.yara_rules_index') }}">YARA rules</a>
+      </li>
+      <li class="nav-item ms-auto">
+        <a class="nav-link" href="/upload">Upload file</a>
       </li>
     </ul>
   </div>
@@ -32,7 +35,7 @@
     <div class="col">
       <h1 class="h4 mb-0">Activity logs</h1>
       <p class="small text-muted mb-0">
-        Centralised audit trail for key actions performed in ForenHub.
+        Centralised audit trail for key actions performed in Forenalyze.
       </p>
     </div>
   </div>
