@@ -1,9 +1,9 @@
-# Forenalyze
+# ForenAlyze
 
 Plataforma web para **recogida y análisis automatizado de evidencias forenses**, desarrollada como
 **Trabajo Fin de Máster (TFM)** en Seguridad Informática.
 
-Forenalyze permite a un usuario autenticado subir ficheros sospechosos (documentos Office, PDF,
+ForenAlyze permite a un usuario autenticado subir ficheros sospechosos (documentos Office, PDF,
 ejecutables, imágenes, audio, etc.), lanzar un **pipeline de análisis forense** y consultar los
 resultados desde una interfaz web cuidada, con énfasis en trazabilidad y experiencia de uso.
 
@@ -98,7 +98,7 @@ ForenHub/
 
 ## 3. Puesta en marcha desde cero
 
-A continuación se describe cómo arrancar Forenalyze tanto en un entorno
+A continuación se describe cómo arrancar ForenAlyze tanto en un entorno
 **local con Python** como usando **Docker Compose**.
 
 ### 3.1. Prerrequisitos
@@ -221,7 +221,7 @@ En `docker-compose.yml` se definen:
 
 - `postgres` – Contenedor PostgreSQL 16.
 - `tika` – Contenedor `apache/tika:latest` exponiendo el puerto 9998.
-- `web` – Imagen de la aplicación Forenalyze basada en `python:3.11-slim` con
+- `web` – Imagen de la aplicación ForenAlyze basada en `python:3.11-slim` con
   ClamAV instalado y `gunicorn` escuchando en `0.0.0.0:8000`.
 
 ### 4.2. Variables de entorno en Docker
@@ -357,7 +357,7 @@ Limitaciones conocidas:
 
 ## 7. Licencia y créditos
 
-- El código de Forenalyze se publica con la licencia indicada en `LICENSE`.
+- El código de ForenAlyze se publica con la licencia indicada en `LICENSE`.
 - Las reglas YARA, firmas AV y servicios externos (VirusTotal, Hybrid Analysis,
   conjuntos de reglas públicos como `signature-base`, etc.) tienen sus propias
   licencias y términos de uso que deben respetarse por separado.
