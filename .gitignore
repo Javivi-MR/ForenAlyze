@@ -19,8 +19,6 @@ forenalyze.db-wal
 .env
 .env.*
 
-yara-signature-base/
-
 # Archivos subidos
 /instance/uploads/*
 

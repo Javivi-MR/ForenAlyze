@@ -1,0 +1,3 @@
+[submodule "yara-signature-base"]
+	path = yara-signature-base
+	url = https://github.com/Neo23x0/signature-base.git
