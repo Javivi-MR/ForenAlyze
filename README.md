@@ -1,244 +1,366 @@
-# Plataforma Web de Recogida de Evidencias Forenses
+# Forenalyze
 
-Este repositorio contiene el desarrollo de una **plataforma web para la recogida y análisis automatizado de evidencias forenses**, realizada como **Trabajo Fin de Máster (TFM)** del Máster en Seguridad Informática.
+Plataforma web para **recogida y análisis automatizado de evidencias forenses**, desarrollada como
+**Trabajo Fin de Máster (TFM)** en Seguridad Informática.
 
-El objetivo del proyecto es proporcionar una herramienta sencilla que permita a usuarios autenticados subir ficheros, lanzar un pipeline de análisis forense automatizado y consultar los resultados desde una interfaz web centrada en la trazabilidad.
-
----
-
-## Objetivo del proyecto
-
-La plataforma está pensada como un punto centralizado de recogida y análisis de evidencias digitales (principalmente documentos, imágenes y audio), con énfasis en:
-
-- **Automatización** del análisis técnico (hashes, AV, YARA, macros, esteganografía, etc.).
-- **Trazabilidad y auditoría** de las acciones realizadas sobre cada fichero.
-- **Visualización** de indicadores clave (volumen, tipos de ficheros, detecciones, uso de almacenamiento).
+Forenalyze permite a un usuario autenticado subir ficheros sospechosos (documentos Office, PDF,
+ejecutables, imágenes, audio, etc.), lanzar un **pipeline de análisis forense** y consultar los
+resultados desde una interfaz web cuidada, con énfasis en trazabilidad y experiencia de uso.
 
 ---
 
-## Características principales
+## 1. Funcionalidades principales
 
-### Autenticación y usuario
+### 1.1. Gestión de usuarios y notificaciones
 
-- Inicio y cierre de sesión mediante Flask-Login.
-- Perfil de usuario con edición de nombre, cambio de contraseña y actualización de avatar.
-- Contador de notificaciones nuevo en la interfaz (campana en la barra superior).
+- Autenticación con Flask‑Login (login/logout).
+- Usuario administrador creado mediante script (`create_admin.py`).
+- Perfil con edición de datos básicos y cambio de contraseña.
+- Avatar configurable por usuario (almacenado en `app/static/avatars/`).
+- **Campana de notificaciones** en la barra superior con contador y listado de alertas
+  recientes (malware detectado, informes listos, etc.).
 
-### Gestión de ficheros
+### 1.2. Flujo de trabajo
+
+1. El usuario inicia sesión.
+2. Sube un fichero desde la vista **Upload file**.
+3. El backend almacena la evidencia en `instance/uploads/` y crea el registro `File`.
+4. Se lanza en segundo plano el **pipeline de análisis** sobre esa evidencia.
+5. Al finalizar, se crea un registro `Analysis`, se actualiza el `final_verdict` del fichero
+	y se generan **alertas** si procede.
+6. El usuario consulta el resultado desde:
+	- El **Dashboard** (últimos análisis y KPIs).
+	- La vista **Files & analyses** (listados, filtros y acceso al informe).
+	- El **informe detallado** de cada análisis (HTML, JSON, PDF).
+
+### 1.3. Gestión de ficheros
 
 - Subida de ficheros autenticada con validación de extensión y tamaño (hasta 100 MB).
-- Soporte para ficheros ofimáticos (DOC/DOCX/DOCM, XLS/XLSX/XLSM, PPT/PPTX/PPTM), ejecutables, PDF, imágenes y WAV.
-- Almacenamiento en disco con nombres internos aleatorizados y registro completo en base de datos.
-- Cuota de almacenamiento configurable por usuario (`STORAGE_QUOTA_MB`) y cálculo del espacio usado.
-- Sección de **Storage** donde el usuario puede ver sus ficheros, el espacio ocupado y eliminar evidencias (borrando también análisis y alertas asociadas).
+- Soporte para ficheros ofimáticos (DOC/DOCX/DOCM, XLS/XLSX/XLSM, PPT/PPTX/PPTM),
+  ejecutables, PDF, imágenes y WAV.
+- Almacenamiento en disco con nombres internos aleatorizados y registro completo
+  en base de datos.
+- Cuota de almacenamiento configurable por usuario (`STORAGE_QUOTA_MB`) y cálculo
+  del espacio usado.
+- Sección de **Storage** donde el usuario puede ver sus ficheros, el espacio
+  ocupado y eliminar evidencias (borrando también análisis y alertas asociadas).
 
-### Pipeline de análisis forense
+### 1.3. Pipeline de análisis (resumen)
 
-Implementado en `app/analysis/pipeline.py` y ejecutado en segundo plano tras la subida del fichero.
+Ver sección **1.3. Pipeline de análisis** más arriba para el detalle técnico.
 
-- **Cálculo de hashes**: MD5, SHA1, SHA256.
-	- Se calculan tanto en el pipeline como en el momento de la subida, almacenándose también en el modelo `File` como huella de integridad.
-- **Detección de tipo**: tipo MIME y tipo lógico de fichero.
-- **Metadatos básicos**:
-	- Tamaño y tipo.
-	- Para imágenes: resolución y metadatos EXIF (si están disponibles).
-	- Para audio: duración, bitrate y etiquetas típicas (artista, álbum, título).
-- **Análisis antivirus local (ClamAV)**:
-	- Ejecución de `clamscan` si está disponible en el sistema o dentro del contenedor Docker de la aplicación.
-	- Clasificación del resultado: `clean`, `infected`, `not_available`, `error`, `unknown`.
-- **Consulta a VirusTotal (opcional)**:
-	- Uso de la API v3 de VirusTotal a partir del hash SHA256 (no se sube el fichero).
-	- Requiere configurar `VIRUSTOTAL_API_KEY` (variable de entorno o entrada en `pyvenv.cfg`).
-- **Escaneo YARA (opcional)**:
-	- Carga de reglas desde una ruta configurable (`YARA_ENABLED` y `YARA_RULES_PATH`).
-	- Integración con un conjunto de reglas públicas de alta calidad (snapshot del repositorio `Neo23x0/signature-base`) para disponer de firmas actualizadas sin tener que mantener reglas propias desde cero.
-	- Serialización de las coincidencias para su consulta en el informe.
-- **Detección de macros en documentos Office**:
-	- Uso de `oletools/olevba` cuando está instalado.
-	- Fallback heurístico cuando la librería no está disponible.
-	- Extracción de módulos VBA, conteo de macros, tamaño de código e indicadores sospechosos.
-- **Detección de esteganografía**:
-	- Extracción de texto oculto en los bits menos significativos (LSB) de imágenes.
-	- Extracción de posible contenido oculto en audio WAV mediante LSB.
-	- Búsqueda de grandes blobs base64 embebidos en el fichero (PDF, audio u otros).
-	- Heurísticas de tamaño para marcar ficheros inusualmente grandes como "posible" esteganografía.
-	- Clasificación simple: `no`, `possible`, `yes`.
-- **Análisis de ficheros de audio**:
-	- Uso de `mutagen` para extraer metadatos de audio.
-	- Generación opcional de espectrogramas en PNG para WAV mediante `numpy` y `matplotlib` (mostrados en el informe si las dependencias están instaladas).
-- **Veredicto global**:
-	- Combinación de señales (ClamAV, YARA, macros, estego) en un campo `final_verdict` (`clean`, `suspicious`, `malicious`, `critical`).
-	- Generación de un resumen textual del análisis para facilitar la lectura rápida.
-
-Todos los resultados se persisten en el modelo `Analysis`, incluyendo hashes, metadatos extendidos (`additional_results` como JSON) y versiones de motor/reglas.
-
-### Alertas y notificaciones
+### 1.4. Alertas y dashboard (resumen)
 
 - Modelo `Alert` asociado a ficheros y análisis.
-- Creación automática de alertas en función de:
-	- Veredictos `malicious`/`critical`.
-	- Detección de macros sospechosas.
-	- Presencia de indicadores de esteganografía.
-	- Superación de un umbral diario de ficheros maliciosos.
-	- Disponibilidad de nuevos informes (alerta de "Report ready").
-- Contador de notificaciones en el usuario y endpoints para marcar todas como leídas.
-
-### Dashboard y visualización
-
-- **Dashboard principal** con:
-	- KPIs de volumen de ficheros subidos, analizados, pendientes y detecciones recientes.
-	- Uso de almacenamiento global y porcentaje de ocupación.
-	- Series temporales de detecciones en los últimos 7 días.
-	- Distribución de tipos de fichero analizados.
-	- Detecciones por fuente (ClamAV, YARA, sandbox reservado, estego, macros).
-	- Últimos ficheros analizados y alertas recientes.
-- Gráficas interactivas implementadas con Chart.js (`dashboard.js`).
-
-### Listados e informes
-
-- Listado de ficheros con estado de análisis, tamaño legible y propietario.
-- Listado de análisis realizados con veredicto, hashes y fuentes de detección activas.
-- Informe de análisis detallado por fichero que incluye:
-	- Hashes, metadatos y tipo de fichero.
-	- Resultado enriquecido de ClamAV y VirusTotal.
-	- Coincidencias YARA.
-	- Resultado de detección de macros y acceso al código VBA.
-	- Información de esteganografía (indicadores, blobs base64, payloads recuperados).
-	- Metadatos y espectrograma de audio cuando aplica.
-	- Alertas asociadas a ese análisis.
-- Endpoints auxiliares para recuperar, en JSON, payloads completos de esteganografía o módulos VBA individuales (para mostrarlos en modales en la interfaz).
-
-### Trazabilidad y auditoría
-
-- Modelo `Log` para registrar eventos de alto nivel (login, logout, subida, análisis completado, limpieza de almacenamiento, etc.).
-- Captura de IP, user-agent, acción, recurso lógico, estado y detalles adicionales en JSON.
-- Vista de **Logs** paginada, ordenada por fecha descendente.
-
-### Políticas de almacenamiento y borrado de evidencias
-
-- Los ficheros subidos se almacenan en un directorio interno de la instancia de Flask (por defecto `instance/uploads/`), **fuera de la carpeta `static/`**, por lo que **no son servidos directamente por el servidor web**.
-- El acceso a la evidencia se realiza siempre a través de vistas controladas (informes HTML, export JSON/PDF), nunca exponiendo la ruta física real del fichero como recurso estático.
-- La sección de **Storage** permite al usuario revisar sus ficheros y eliminar evidencias cuando necesite liberar espacio. Al borrar un fichero se aplica una política de limpieza en cascada:
-	- Se eliminan los análisis (`Analysis`) asociados a ese `File`.
-	- Se eliminan las alertas (`Alert`) vinculadas a esos análisis y al propio fichero.
-	- Se borra el fichero físico del disco si existe.
-- Cada operación de borrado genera entradas en el modelo `Log` (por ejemplo, acciones `analysis_deleted` y `storage_cleanup`), de modo que queda constancia de **quién**, **cuándo** y **qué** se ha eliminado, cumpliendo el objetivo de trazabilidad en las operaciones de limpieza de almacenamiento.
+- Generación automática de alertas según veredictos y hallazgos.
+- Dashboard con KPIs, gráficas y tabla de últimos ficheros analizados.
+- Modelo `Log` para auditoría de acciones.
 
 ---
 
-## Tecnologías utilizadas
+## 2. Arquitectura general
 
-- Python 3
-- Flask (aplicación web, blueprints, contexto de aplicación)
-- Flask-Login (gestión de sesiones de usuario)
-- Flask-WTF / WTForms (formularios de login)
-- SQLAlchemy / Flask-SQLAlchemy (modelo de datos sobre PostgreSQL)
-- PostgreSQL (almacenamiento principal de datos, normalmente desplegado en contenedor Docker o servicio gestionado)
-- Jinja2 (plantillas HTML)
-- HTML / CSS (Bootstrap) para la interfaz
-- Chart.js para visualización de métricas en el dashboard
-- SweetAlert2 para validaciones de subida en frontend
-- Librerías forenses y de análisis opcionales:
-	- `oletools` (análisis de macros VBA)
-	- `yara` (reglas YARA)
-	- `mutagen` (metadatos de audio)
-	- `Pillow` (imágenes y EXIF)
-	- `numpy` y `matplotlib` (espectrogramas de audio)
-	- `requests` (integración con API de VirusTotal)
+- Python 3 + Flask (blueprints, contexto de aplicación).
+- Flask‑Login para autenticación.
+- Flask‑SQLAlchemy + PostgreSQL como base de datos.
+- Flask‑Migrate / Alembic para migraciones.
+- Jinja2 + Bootstrap 5 + Chart.js en el frontend.
+- Librerías forenses opcionales: `oletools`, `yara`, `mutagen`, `Pillow`,
+  `numpy`, `matplotlib`, `requests`.
 
----
+Estructura simplificada del proyecto:
 
-## Estado actual del proyecto
-
-El proyecto se encuentra en un estado de **prototipo funcional**:
-
-- El flujo completo de subida → análisis → alertas → consulta de informe está implementado.
-- La plataforma ya ofrece un dashboard con métricas, vistas de ficheros, análisis, almacenamiento y logs.
-- Varias características avanzadas (VirusTotal, YARA, macros, estego, espectrogramas) se han diseñado como **módulos opcionales**, que se activan cuando las dependencias y la configuración están disponibles.
-
-Limitaciones actuales (trabajo futuro):
-
-- No hay alta de usuarios vía interfaz (la creación de usuarios se realiza vía script/administración).
-- No se ha integrado todavía un sandbox externo real (el campo `sandbox_score` está reservado).
-- Faltan baterías de tests automatizados y documentación técnica más detallada (diagramas, ejemplos de despliegue avanzado, hardening, etc.).
-
----
-
-## Aviso
-
-Este proyecto tiene **fines académicos** y no pretende sustituir herramientas forenses profesionales certificadas.
+```text
+ForenHub/
+├─ run.py                 # Punto de entrada Flask / Gunicorn
+├─ create_admin.py        # Crea usuario admin (admin/admin123)
+├─ requirements.txt
+├─ docker-compose.yml
+├─ Dockerfile
+├─ .env.example           # Plantilla de configuración
+├─ app/
+│  ├─ __init__.py         # create_app(), registro de blueprints
+│  ├─ config.py           # Clase Config (entorno, VT, YARA, Tika, sandbox...)
+│  ├─ extensions.py       # db, login_manager, migrate
+│  ├─ models.py           # User, File, Analysis, Alert, Log, etc.
+│  ├─ analysis/
+│  │  ├─ dashboard.py     # Rutas principales (dashboard, files, logs, storage...)
+│  │  ├─ pipeline.py      # Lógica principal de análisis
+│  │  └─ ...
+│  ├─ auth/               # Blueprint de autenticación
+│  ├─ templates/          # Plantillas Jinja2
+│  └─ static/             # JS, CSS, avatars, espectrogramas...
+└─ instance/
+   └─ uploads/            # Evidencias subidas (fuera de static)
+```
 
 ---
 
-## Configuración por variables de entorno (secrets y claves)
+## 3. Puesta en marcha desde cero
 
-La plataforma está pensada para que las credenciales y parámetros sensibles **no** se almacenen en el código fuente, sino como variables de entorno o secretos del entorno de despliegue.
+A continuación se describe cómo arrancar Forenalyze tanto en un entorno
+**local con Python** como usando **Docker Compose**.
 
-Variables de entorno principales:
+### 3.1. Prerrequisitos
 
-- `SECRET_KEY`  
-	Clave secreta de Flask para sesiones y CSRF. **Debe definirse siempre en producción**. En desarrollo, si no se establece, se usará un valor por defecto (`forenalyze-secret-key`).
+- Python 3.11 (o compatible) instalado.
+- Git.
+- PostgreSQL 14+ (si vas a ejecutar sin Docker) **o** Docker + Docker Compose.
 
-- `DATABASE_URL`  
-	URI de conexión a la base de datos, por ejemplo:  
-	`postgresql+psycopg2://forenalyze:forenalyze@localhost:5432/forenalyze`  
-	Si no se define, se usa este valor por defecto para desarrollo local.
+En Windows se recomienda usar PowerShell.
 
-- `STORAGE_QUOTA_MB`  
-	Cuota de almacenamiento por usuario (en MB). Por defecto `2048`.
+### 3.2. Clonar el repositorio
 
-- `CLAMAV_PATH`  
-	Ruta al ejecutable de `clamscan`/`clamscan.exe`. Si no se define, se intentará usar simplemente `clamscan` del `PATH` del sistema o del contenedor.
+```bash
+git clone https://github.com/Javivi-MR/ForenHub.git
+cd ForenHub
+```
 
-- `VIRUSTOTAL_API_KEY`  
-	API key de VirusTotal para realizar consultas por hash (API v3). Si no está configurada, la integración se marca como `not_configured` y el análisis continúa sin romper el pipeline.  
-	Como compatibilidad, también puede leerse desde `pyvenv.cfg` dentro del entorno virtual (`virustotal_api_key = ...`).
+### 3.3. Configuración de entorno (.env)
 
-- `VIRUSTOTAL_ENABLED`  
-	Permite activar/desactivar completamente las consultas a VirusTotal desde configuración. Valores aceptados: `1/true/yes` (activado), `0/false/no` (desactivado). Por defecto está activado.
+1. Copia el fichero de ejemplo:
 
-- `VIRUSTOTAL_CACHE_TTL_SECONDS`  
-	Tiempo de vida (en segundos) de una caché en memoria por hash SHA256. Mientras el TTL no haya expirado, se reutiliza la última respuesta de VirusTotal para ese hash dentro del mismo proceso. Por defecto `3600` segundos (1 hora).
+   ```bash
+   cp .env.example .env   # En PowerShell: copy .env.example .env
+   ```
 
-- `YARA_ENABLED` y `YARA_RULES_PATH`  
-	Controlan el escaneo YARA.  
-	`YARA_ENABLED` (`1/true/yes` para activar) y `YARA_RULES_PATH` (ruta al fichero de reglas YARA **o a un directorio que contenga múltiples ficheros .yar/.yara/.rule**). Si la librería `yara` no está instalada o la ruta no existe, el escaneo se desactiva de forma segura.
-	En el contexto del TFM, se utiliza normalmente un **snapshot local** del repositorio público `Neo23x0/signature-base` como fuente de reglas (por ejemplo, apuntando `YARA_RULES_PATH` al subdirectorio `yara/`). Esto permite beneficiarse de reglas mantenidas por terceros especializados, citando la fuente en la memoria y sin atribuirse la autoría de dichas firmas.
+2. Edita `.env` y revisa al menos estas variables:
 
-- `SANDBOX_ENABLED`, `SANDBOX_MODE` y `SANDBOX_MOCK_RESULT_PATH`  
-	Controlan el **hook de integración con sandbox dinámico** (por ejemplo Cuckoo o un servicio remoto como Hybrid Analysis / Falcon Sandbox).  
-	`SANDBOX_ENABLED` (`1/true/yes` para activar) y `SANDBOX_MODE` definen el modo de trabajo:
-	- `disabled` (por defecto): el sandbox no se ejecuta y el campo `sandbox_score` permanece vacío.  
-	- `mock`: el pipeline genera un resultado sintético en función del tipo de fichero (EXE, Office, PDF, etc.) para mostrar en los informes cómo se integrarían un `score`, familia y etiquetas de sandbox **sin necesidad de desplegar Cuckoo**.  
-	- `file`: el pipeline intenta leer un JSON de ejemplo desde `SANDBOX_MOCK_RESULT_PATH` (por ejemplo, la salida real de Cuckoo para una muestra) y extrae de ahí un `score`, familia y tags. Esto permite una **PoC offline** en la que Forenalyze consume resultados de sandbox ya generados.
-	- `hybrid_analysis`: el pipeline envía el fichero a un servicio remoto Hybrid Analysis / Falcon Sandbox mediante su API HTTP (cuenta community con API key) y adjunta en los metadatos la URL pública del informe, de modo que el informe HTML muestre un botón para abrir el análisis dinámico en una nueva pestaña.
-	En todos los modos, el resultado se refleja en el campo `sandbox_score` del modelo `Analysis` (cuando hay `score`) y se adjunta en `additional_results['sandbox']`, de modo que tanto el informe HTML como el PDF/JSON muestran explícitamente el bloque de "Sandbox / dynamic analysis" y el diseño de integración quede claramente documentado para el TFM.
+   - `SECRET_KEY` – cambia el valor por uno aleatorio en producción.
+   - `DATABASE_URL` – URI de conexión a PostgreSQL, por ejemplo:
 
-- `HYBRID_ANALYSIS_API_KEY`, `HYBRID_ANALYSIS_API_URL`, `HYBRID_ANALYSIS_PUBLIC_URL`, `HYBRID_ANALYSIS_ENV_ID`  
-	Variables específicas para la integración remota con Hybrid Analysis / Falcon Sandbox cuando `SANDBOX_MODE=hybrid_analysis`. Permiten configurar la API key, el endpoint base de la API v2, la URL pública para ver muestras y el identificador de entorno (p.ej. un perfil concreto de Windows). El uso de este tipo de servicios está sujeto a sus términos y condiciones (cuotas, uso académico, privacidad de muestras, etc.), que deben respetarse en cualquier despliegue real.
+     ```text
+     postgresql+psycopg2://forenalyze:forenalyze@localhost:5432/forenalyze
+     ```
 
-En despliegues reales (por ejemplo, en Azure), estas variables deben definirse en el mecanismo de configuración de la plataforma (Application Settings, variables del contenedor, etc.), nunca en el código fuente.
+   - `STORAGE_QUOTA_MB` – cuota por usuario en MB (por defecto 2048).
+   - `CLAMAV_PATH` – si tienes `clamscan` en el PATH, puedes dejarlo vacío.
+   - `VIRUSTOTAL_API_KEY` – si quieres activar consultas a VirusTotal.
+   - `YARA_ENABLED` / `YARA_RULES_PATH` – para activar reglas YARA.
+   - `TIKA_ENABLED`, `TIKA_SERVER_URL` – si vas a usar Apache Tika.
+   - `SANDBOX_*` – sólo si vas a probar el hook de sandbox / Hybrid Analysis.
+
+> Nota: en desarrollo, `app/config.py` también admite leer `VIRUSTOTAL_API_KEY`
+> desde `venv/pyvenv.cfg` (clave `virustotal_api_key`).
+
+### 3.4. Entorno virtual y dependencias (modo local)
+
+```bash
+python -m venv venv
+# En Linux / macOS
+source venv/bin/activate
+# En Windows PowerShell
+venv\Scripts\Activate.ps1
+
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 3.5. Base de datos y migraciones
+
+#### 3.5.1. Crear la base de datos PostgreSQL
+
+Crea una base de datos vacía y un usuario que coincidan con tu `DATABASE_URL`.
+Ejemplo (psql):
+
+```sql
+CREATE DATABASE forenalyze;
+CREATE USER forenalyze WITH PASSWORD 'forenalyze';
+GRANT ALL PRIVILEGES ON DATABASE forenalyze TO forenalyze;
+```
+
+#### 3.5.2. Aplicar migraciones Alembic
+
+Desde la raíz del proyecto, con el entorno virtual activado:
+
+```bash
+# Linux / macOS
+export FLASK_APP=run.py
+flask db upgrade
+
+# Windows PowerShell
+$env:FLASK_APP = "run.py"
+flask db upgrade
+```
+
+Esto creará todo el esquema definido en `migrations/`.
+
+### 3.6. Crear usuario administrador
+
+Ejecuta una vez el script `create_admin.py`:
+
+```bash
+python create_admin.py
+```
+
+- Si no existe, creará el usuario `admin` con contraseña `admin123`.
+- Si ya existe, mostrará un mensaje indicándolo.
+
+### 3.7. Ejecutar la aplicación en local
+
+Con el entorno virtual activo:
+
+```bash
+python run.py
+```
+
+Por defecto Flask arranca en `http://127.0.0.1:5000` con `debug=True`.
+
+Accede en el navegador y entra con las credenciales `admin` / `admin123`.
 
 ---
 
-## Uso de VirusTotal y límites de la API
+## 4. Despliegue con Docker Compose
 
-La integración con VirusTotal se realiza **exclusivamente por hash SHA256**, es decir, la plataforma no sube los ficheros, sólo consulta si ya existen en VirusTotal y cuáles han sido los resultados de su último análisis.
+El repositorio incluye un `Dockerfile` y un `docker-compose.yml` para levantar
+rápidamente un entorno completo con PostgreSQL, Tika y la aplicación web.
 
-Aspectos importantes:
+### 4.1. Servicios definidos
 
-- La API pública de VirusTotal tiene **límites estrictos de uso** (peticiones por minuto/día) y está pensada para uso ligero o académico. Las cuotas exactas dependen del plan contratado y pueden cambiar con el tiempo; para un uso intensivo es necesario un acuerdo comercial con VirusTotal.
-- Si no se configura `VIRUSTOTAL_API_KEY`, el módulo de análisis devuelve `status = "not_configured"` y el resto del pipeline continúa funcionando con normalidad.
-- La plataforma detecta algunos estados específicos de la API:
-	- `auth_error`: problemas de autenticación/autorización (API key inválida o sin permisos adecuados).
-	- `rate_limited`: se ha alcanzado el límite de peticiones permitido para la API key actual (`HTTP 429`).
-	- `error`: otros errores HTTP o de red.
-	- `not_found`: el hash no figura en la base de datos de VirusTotal.
-- Para evitar consultas repetidas sobre el mismo fichero, se mantiene una **caché ligera en memoria** por hash con un TTL configurable (`VIRUSTOTAL_CACHE_TTL_SECONDS`). Esto reduce el riesgo de agotar la cuota si se re-analizan repetidas veces las mismas evidencias.
+En `docker-compose.yml` se definen:
 
-En el informe HTML y en las exportaciones (JSON/PDF) se refleja el estado de VirusTotal de forma clara, de modo que el usuario pueda distinguir entre:
+- `postgres` – Contenedor PostgreSQL 16.
+- `tika` – Contenedor `apache/tika:latest` exponiendo el puerto 9998.
+- `web` – Imagen de la aplicación Forenalyze basada en `python:3.11-slim` con
+  ClamAV instalado y `gunicorn` escuchando en `0.0.0.0:8000`.
 
-- Resultado válido con estadísticas de motores.
-- Falta de datos (`not_found`).
-- Integración desactivada o no configurada.
-- Errores de credenciales o de límite de cuota.
+### 4.2. Variables de entorno en Docker
+
+El servicio `web` ya establece algunas variables por defecto:
+
+```yaml
+environment:
+  DATABASE_URL: postgresql+psycopg2://forenalyze:forenalyze@postgres:5432/forenalyze
+  CLAMAV_PATH: clamscan
+  SECRET_KEY: forenalyze-secret-key
+  TIKA_ENABLED: "true"
+  TIKA_SERVER_URL: http://tika:9998
+```
+
+Puedes complementarlas añadiendo un fichero `.env` o variables adicionales
+según tus necesidades.
+
+### 4.3. Construir e iniciar servicios
+
+Desde la raíz del proyecto:
+
+```bash
+docker-compose up --build
+```
+
+Esto levantará PostgreSQL, Tika y la aplicación. La primera vez deberás aplicar
+las migraciones dentro del contenedor `web`:
+
+```bash
+# En otra terminal
+docker-compose run --rm web flask db upgrade
+```
+
+A partir de ahí, con `docker-compose up` el esquema ya estará creado.
+
+La aplicación quedará accesible en `http://127.0.0.1:8000`.
+
+> Para crear el usuario administrador dentro del contenedor puedes ejecutar:
+>
+> ```bash
+> docker-compose run --rm web python create_admin.py
+> ```
+
+---
+
+## 5. Configuración avanzada
+
+### 5.1. VirusTotal
+
+- Asegúrate de contar con una API key válida y respetar los límites de uso.
+- Establece `VIRUSTOTAL_API_KEY` y, opcionalmente, ajusta:
+  - `VIRUSTOTAL_ENABLED` (`true`/`false`).
+  - `VIRUSTOTAL_CACHE_TTL_SECONDS` para la caché en memoria.
+- El informe HTML indica claramente el estado de la integración
+  (datos válidos, no configurado, rate‑limit, etc.).
+
+### 5.2. YARA y reglas externas
+
+- Instala la librería `yara` (o `yara-python`) en el entorno.
+- Activa el módulo con:
+
+  ```env
+  YARA_ENABLED=true
+  YARA_RULES_PATH=/ruta/a/mis/reglas
+  ```
+
+- `YARA_RULES_PATH` puede apuntar a:
+  - Un único fichero de reglas (`forenalyze.yar`).
+  - Un directorio con múltiples ficheros de reglas.
+- Desde la interfaz **YARA rules** puedes:
+  - Ver el listado actual.
+  - Subir nuevos ficheros (modo directorio).
+  - Editar un fichero desde el navegador.
+  - Eliminar ficheros individuales (modo directorio).
+
+Para utilizar reglas externas como `Neo23x0/signature-base` se recomienda:
+
+1. Clonar ese repositorio **fuera** de ForenHub (para no anidar repositorios).
+2. Apuntar `YARA_RULES_PATH` al subdirectorio adecuado (p.ej. `.../signature-base/yara`).
+3. Documentar en la memoria del TFM la procedencia y licencia de dichas reglas.
+
+### 5.3. Apache Tika
+
+- El contenedor `tika` del `docker-compose.yml` expone el servidor en `9998`.
+- Para un despliegue sin Docker puedes arrancar Tika Server manualmente y
+  apuntar `TIKA_SERVER_URL` a la URL correspondiente.
+- `TIKA_MAX_TEXT_CHARS` controla el máximo de caracteres de texto que se guardan
+  en base de datos para cada documento (por defecto 20 000).
+
+### 5.4. Sandbox / Hybrid Analysis
+
+El proyecto implementa un **hook genérico** para sandbox dinámico:
+
+- `SANDBOX_ENABLED=true` activa la integración.
+- `SANDBOX_MODE` define el modo de operación:
+  - `disabled` – apagado.
+  - `mock` – genera resultados sintéticos para la demo.
+  - `file` – lee un JSON de ejemplo desde `SANDBOX_MOCK_RESULT_PATH`.
+  - `hybrid_analysis` – integra con Hybrid Analysis / Falcon Sandbox vía API.
+
+Cuando `SANDBOX_MODE=hybrid_analysis` se usan además:
+
+- `HYBRID_ANALYSIS_API_KEY`
+- `HYBRID_ANALYSIS_API_URL`
+- `HYBRID_ANALYSIS_PUBLIC_URL`
+- `HYBRID_ANALYSIS_ENV_ID`
+
+En el informe HTML aparece una tarjeta **Sandbox / dynamic analysis** con el
+`score`, `verdict`, familia, tags y, cuando existe, un botón para abrir el
+informe remoto en Hybrid Analysis.
+
+---
+
+## 6. Seguridad, privacidad y limitaciones
+
+- El proyecto está orientado a un contexto **académico / de laboratorio**.
+- No sustituye herramientas forenses certificadas ni productos comerciales.
+- La responsabilidad sobre el uso de servicios externos (VirusTotal, Hybrid
+  Analysis, etc.) y el tratamiento de las evidencias recae en el operador.
+- No se recomienda subir evidencias con datos personales o sensibles a
+  servicios externos sin haber revisado cuidadosamente sus políticas.
+
+Limitaciones conocidas:
+
+- No hay interfaz para alta de nuevos usuarios (el admin se crea por script).
+- No se incluyen tests automatizados en esta versión.
+- Algunas funciones (espectrogramas, macros, YARA) dependen de librerías
+  opcionales; si no están instaladas, el sistema lo refleja en el informe y
+  continúa el análisis con el resto de módulos.
+
+---
+
+## 7. Licencia y créditos
+
+- El código de Forenalyze se publica con la licencia indicada en `LICENSE`.
+- Las reglas YARA, firmas AV y servicios externos (VirusTotal, Hybrid Analysis,
+  conjuntos de reglas públicos como `signature-base`, etc.) tienen sus propias
+  licencias y términos de uso que deben respetarse por separado.
+
+Si utilizas este proyecto como base para otros trabajos académicos, se
+recomienda citar la memoria del TFM y el repositorio original.

@@ -60,9 +60,7 @@
                     {{ alert.file.filename_original }}
                   </div>
                   {% endif %}
-                  <div class="text-muted small">
-                    {{ alert.description }}
-                  </div>
+                  <div class="text-muted small" style="white-space: pre-wrap; word-break: break-all;">{{ alert.description | trim }}</div>
                 </div>
               </div>
             </li>

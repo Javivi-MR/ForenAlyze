@@ -6,9 +6,9 @@ services:
     container_name: forenalyze-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: forenalyze
-      POSTGRES_PASSWORD: forenalyze
-      POSTGRES_DB: forenalyze
+      POSTGRES_USER: forenalyze # Select your own username
+      POSTGRES_PASSWORD: forenalyze # Select your own password
+      POSTGRES_DB: forenalyze 
     ports:
       - "5432:5432"
     volumes:
