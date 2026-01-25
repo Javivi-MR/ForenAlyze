@@ -50,11 +50,24 @@ resultados desde una interfaz web cuidada, con énfasis en trazabilidad y experi
 - Sección de **Storage** donde el usuario puede ver sus ficheros, el espacio
   ocupado y eliminar evidencias (borrando también análisis y alertas asociadas).
 
-### 1.3. Pipeline de análisis (resumen)
+### 1.4. Pipeline de análisis (resumen)
 
-Ver sección **1.3. Pipeline de análisis** más arriba para el detalle técnico.
+Tras la subida de cada fichero se ejecuta en segundo plano un pipeline que:
 
-### 1.4. Alertas y dashboard (resumen)
+- Calcula hashes (MD5, SHA1, SHA256), tamaño y tipo MIME del fichero.
+- Extrae metadatos básicos según el tipo (Office/PDF/imágenes/audio).
+- Lanza un análisis antivirus con ClamAV cuando está disponible.
+- Escanea el fichero con reglas YARA configurables (`YARA_ENABLED` / `YARA_RULES_PATH`).
+- Integra, si se configura, consultas a VirusTotal con caché en memoria.
+- Puede extraer texto mediante Apache Tika para documentos soportados.
+- Realiza detección básica de macros en documentos Office.
+- Aplica comprobaciones sencillas de esteganografía y patrones sospechosos.
+- Analiza ficheros de audio (metadatos y espectrograma para WAV).
+- Invoca opcionalmente un hook de sandbox dinámico (mock, fichero de ejemplo o Hybrid Analysis).
+- Consolida todos los resultados en un veredicto final normalizado y en un registro `Analysis`
+  que alimenta los informes HTML/JSON/PDF.
+
+### 1.5. Alertas y dashboard (resumen)
 
 - Modelo `Alert` asociado a ficheros y análisis.
 - Generación automática de alertas según veredictos y hallazgos.
