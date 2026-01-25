@@ -22,7 +22,7 @@ resultados desde una interfaz web cuidada, con énfasis en trazabilidad y experi
 - Panel de administración de usuarios (sólo admin) para crear cuentas,
   resetear contraseñas de otros usuarios y consultar el espacio de
   almacenamiento utilizado por cada uno.
-- **Campana de notificaciones** en la barra superior con contador y listado de alertas
+- Campana de notificaciones en la barra superior con contador y listado de alertas
   recientes (malware detectado, informes listos, etc.).
 
 ### 1.2. Flujo de trabajo
