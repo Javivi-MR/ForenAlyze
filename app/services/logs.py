@@ -15,7 +15,7 @@ def _get_client_ip(req: Request | None) -> Optional[str]:
     if req is None:
         return None
 
-    # Soporta entornos detrás de proxy / balanceador
+    # Soporta entornos detrás de proxys reversos
     forwarded_for = req.headers.get("X-Forwarded-For", "")
     if forwarded_for:
         # Tomamos la primera IP de la cadena
@@ -52,7 +52,7 @@ def log_event(
         if user_obj is None and hasattr(current_user, "is_authenticated"):
             try:
                 if current_user.is_authenticated:
-                    user_obj = current_user  # type: ignore[assignment]
+                    user_obj = current_user
             except Exception:
                 # current_user puede lanzar si no hay contexto de app/login
                 user_obj = None
@@ -89,12 +89,11 @@ def log_event(
         db.session.add(log)
         db.session.commit()
 
-    except Exception as exc:  # pragma: no cover - no queremos romper el flujo
+    except Exception as exc:
         # Los errores de logging nunca deben tumbar la petición principal.
         try:
             current_app.logger.exception("Error persisting audit log: %s", exc)
         except Exception:
-            # current_app puede no estar disponible en algunos contextos
             pass
         try:
             db.session.rollback()

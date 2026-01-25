@@ -120,6 +120,6 @@ def create_alerts_for_analysis(analysis: Analysis):
     for a in alerts:
         db.session.add(a)
 
-    # No hacemos commit aquí; lo gestiona el llamador.
+    # No hacemos commit aquí; lo gestiona el caller.
     return alerts
 

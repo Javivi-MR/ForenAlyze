@@ -6,8 +6,8 @@ from .extensions import db, login_manager, migrate
 
 try:  # Carga opcional de variables desde .env si python-dotenv está instalado
     from dotenv import load_dotenv
-except ImportError:  # pragma: no cover
-    load_dotenv = None  # type: ignore[assignment]
+except ImportError:
+    load_dotenv = None
 
 
 def create_app():
@@ -24,11 +24,8 @@ def create_app():
     login_manager.init_app(app)
     migrate.init_app(app, db)
 
-    # Ya no usamos SQLite como backend principal, por lo que no aplicamos
-    # PRAGMAs específicos de SQLite aquí.
-
     from .auth import auth_bp
-    # Blueprint principal de dashboard, subida y listado de ficheros
+
     from .analysis.dashboard import dashboard_bp
 
     app.register_blueprint(auth_bp)

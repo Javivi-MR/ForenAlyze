@@ -30,12 +30,10 @@ def logout():
 @app.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
-    # ...existing code para guardar archivo...
     file_path = saved_file_path
     file_record = File(
         filename=filename,
         user_id=current_user.id,
-        # ...otros campos...
     )
     db.session.add(file_record)
     db.session.commit()
@@ -47,14 +45,10 @@ def upload_file():
         yara_result=str(analysis['yara']),
         clamav_result=str(analysis['clamav']),
         virustotal_result=str(analysis['virustotal']),
-        # ...otros campos...
         severity='info',  # calcular según resultado
         summary='Resumen del análisis'
     )
     db.session.add(analysis_record)
     db.session.commit()
-
-    # Crear alertas según resultados
-    # ...lógica para crear Alert...
 
     return redirect(url_for('dashboard'))

@@ -277,7 +277,6 @@ def _run_sandbox(path: Path, mime_type: str) -> Dict[str, Any] | None:
         # Normalizamos la URL base para evitar diferencias entre
         # https://www.hybrid-analysis.com y https://hybrid-analysis.com,
         # usando siempre esta última, que es la que muestra la OpenAPI
-        # oficial en sus ejemplos.
         if "://www.hybrid-analysis.com" in api_url:
             api_url = api_url.replace("://www.hybrid-analysis.com", "://hybrid-analysis.com")
 
@@ -299,9 +298,6 @@ def _run_sandbox(path: Path, mime_type: str) -> Dict[str, Any] | None:
         headers = {
             "api-key": api_key,
             "accept": "application/json",
-            # Algunos despliegues de Hybrid Analysis esperan un
-            # User-Agent concreto; permitimos configurarlo vía env si
-            # fuera necesario, con un valor por defecto genérico.
             "user-agent": str(cfg.get("HYBRID_ANALYSIS_USER_AGENT") or "Forenalyze-TFM"),
         }
 

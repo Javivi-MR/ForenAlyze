@@ -15,7 +15,7 @@ class User(UserMixin, db.Model):
     image_url = db.Column(db.String(256), nullable=True)
     notifications = db.Column(db.Integer, default=0)
 
-    def __repr__(self) -> str:  # pragma: no cover - representación sencilla
+    def __repr__(self) -> str:
         return f"<User {self.username}>"
 
 
@@ -109,7 +109,7 @@ class Alert(db.Model):
     user = db.relationship("User", backref="alerts")
     file = db.relationship("File", backref="alerts")
 
-    def __repr__(self) -> str:  # pragma: no cover - representación sencilla
+    def __repr__(self) -> str:
         return f"<Alert {self.severity} {self.title}>"
 
 
@@ -143,6 +143,6 @@ class Log(db.Model):
 
     user = db.relationship("User", backref="logs")
 
-    def __repr__(self) -> str:  # pragma: no cover - representación sencilla
+    def __repr__(self) -> str: 
         return f"<Log {self.action} {self.username or self.user_id}>"
 
