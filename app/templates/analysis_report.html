@@ -536,14 +536,25 @@ document.addEventListener('DOMContentLoaded', function () {
                   </div>
                 </div>
                 {% if m.code_preview %}
-                <pre class="small mb-1" style="white-space:pre-wrap;">{{ m.code_preview }}</pre>
-                {% endif %}
-                {% if m.code_full and (m.code_full|length) > (m.code_preview|length) %}
+                <details class="small mt-1">
+                  <summary class="cursor-pointer">VBA code (preview)</summary>
+                  <pre class="small mt-1 mb-1" style="white-space:pre-wrap;">{{ m.code_preview }}</pre>
+                  {% if m.code_full and (m.code_full|length) > (m.code_preview|length) %}
+                  <div class="mt-1 text-muted small">Preview only. The full VBA module contains more code.</div>
+                  {% endif %}
+                  <button type="button"
+                          class="btn btn-sm btn-outline-secondary mt-1 macro-payload-btn"
+                          data-index="{{ loop.index0 }}"
+                          data-url="{{ url_for('dashboard.macro_payload', analysis_id=analysis.id) }}">
+                    View / copy full module code
+                  </button>
+                </details>
+                {% else %}
                 <button type="button"
                         class="btn btn-sm btn-outline-secondary macro-payload-btn"
                         data-index="{{ loop.index0 }}"
                         data-url="{{ url_for('dashboard.macro_payload', analysis_id=analysis.id) }}">
-                  View full module code
+                  View / copy full module code
                 </button>
                 {% endif %}
               </div>
@@ -919,11 +930,11 @@ document.addEventListener('DOMContentLoaded', function () {
                   <span class="badge rounded-circle bg-{% if alert.severity == 'danger' %}danger{% elif alert.severity == 'warning' %}warning text-dark{% else %}secondary{% endif %}">!</span>
                 </div>
                 <div class="flex-grow-1">
-                  <div class="d-flex justify-content-between">
+                  <div class="d-flex justify-content-between mb-1">
                     <span class="fw-semibold text-truncate">{{ alert.title }}</span>
-                    <span class="text-muted ms-2 small">{{ alert.created_at }}</span>
+                    <span class="text-muted ms-2 small text-nowrap">{{ alert.created_at }}</span>
                   </div>
-                  <div class="text-muted small">
+                  <div class="text-muted small" style="white-space: pre-wrap; word-break: break-word;">
                     {{ alert.description }}
                   </div>
                 </div>

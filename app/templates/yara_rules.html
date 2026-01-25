@@ -38,9 +38,9 @@
           <div>
             <span class="fw-semibold">YARA rules</span>
             <div class="small text-muted">Current rules used by the analysis engine</div>
-            <div class="small text-muted">ES: Aquí puedes ver, editar y AÑADIR reglas YARA.</div>
+            <div class="small text-muted">ES: Aquí puedes ver las reglas YARA en uso.{% if can_manage_yara %} Como administrador también puedes añadir, editar o borrar ficheros de reglas.{% else %} Los cambios en las reglas sólo pueden realizarlos usuarios administrador.{% endif %}</div>
           </div>
-          {% if is_dir %}
+          {% if is_dir and can_manage_yara %}
           <form class="d-inline-flex align-items-center" method="post" action="{{ url_for('dashboard.yara_rule_upload') }}" enctype="multipart/form-data">
             <label class="btn btn-sm btn-outline-secondary me-2 mb-0">
               <span>Upload new rule file</span>
@@ -75,19 +75,27 @@
                   {% for r in rules %}
                   <tr>
                     <td>
-                      <a href="{{ url_for('dashboard.yara_rule_edit', path=r.name) }}" class="link-light text-decoration-none">
-                        {{ r.name }}
-                      </a>
+                      {% if can_manage_yara %}
+                        <a href="{{ url_for('dashboard.yara_rule_edit', path=r.name) }}" class="link-light text-decoration-none">
+                          {{ r.name }}
+                        </a>
+                      {% else %}
+                        <span class="text-light">{{ r.name }}</span>
+                      {% endif %}
                     </td>
                     <td>{{ (r.size / 1024)|round(1) }} KB</td>
                     <td>{{ r.mtime }}</td>
                     <td>
-                      <a href="{{ url_for('dashboard.yara_rule_edit', path=r.name) }}" class="btn btn-sm btn-outline-secondary me-1">Edit</a>
-                      {% if is_dir %}
-                      <form method="post" action="{{ url_for('dashboard.yara_rule_delete') }}" class="d-inline" onsubmit="return confirm('Delete this YARA rule file?');">
-                        <input type="hidden" name="path" value="{{ r.name }}">
-                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
-                      </form>
+                      {% if can_manage_yara %}
+                        <a href="{{ url_for('dashboard.yara_rule_edit', path=r.name) }}" class="btn btn-sm btn-outline-secondary me-1">Edit</a>
+                        {% if is_dir %}
+                        <form method="post" action="{{ url_for('dashboard.yara_rule_delete') }}" class="d-inline" onsubmit="return confirm('Delete this YARA rule file?');">
+                          <input type="hidden" name="path" value="{{ r.name }}">
+                          <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                        </form>
+                        {% endif %}
+                      {% else %}
+                        <span class="text-muted">Read-only</span>
                       {% endif %}
                     </td>
                   </tr>

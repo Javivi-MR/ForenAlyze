@@ -6,6 +6,7 @@ from pathlib import Path
 from threading import Thread
 from uuid import uuid4
 import textwrap
+from functools import wraps
 
 from flask import (
 	Blueprint,
@@ -30,6 +31,23 @@ from app.services.logs import log_event
 
 
 dashboard_bp = Blueprint("dashboard", __name__)
+
+
+def admin_required(view_func):
+	"""Decorator to restrict access to admin users only."""
+
+	@wraps(view_func)
+	def wrapped_view(*args, **kwargs):
+		if not current_user.is_authenticated:
+			return redirect(url_for("auth.login"))
+
+		if not getattr(current_user, "is_admin", False):
+			flash("You do not have permission to access this section.", "error")
+			return redirect(url_for("dashboard.dashboard_index"))
+
+		return view_func(*args, **kwargs)
+
+	return wrapped_view
 
 
 def _get_yara_rules_root() -> Path | None:
@@ -225,6 +243,144 @@ def edit_profile():
 	return render_template("edit_user.html", user=current_user)
 
 
+@dashboard_bp.route("/admin/users", methods=["GET", "POST"])
+@login_required
+@admin_required
+def manage_users():
+	"""Simple user management view for admins.
+
+	- GET: list all users.
+	- POST: create a new user (admin or normal).
+	"""
+
+	if request.method == "POST":
+		action = (request.form.get("action") or "create").strip().lower()
+		if action != "create":
+			flash("Invalid action.", "error")
+			return redirect(url_for("dashboard.manage_users"))
+
+		new_username = (request.form.get("username") or "").strip()
+		password = request.form.get("password") or ""
+		confirm = request.form.get("confirm_password") or ""
+		is_admin_flag = bool(request.form.get("is_admin"))
+
+		if not new_username or not password or not confirm:
+			flash("Please complete all required fields.", "error")
+			return redirect(url_for("dashboard.manage_users"))
+
+		if password != confirm:
+			flash("Password and confirmation do not match.", "error")
+			return redirect(url_for("dashboard.manage_users"))
+
+		if len(password) < 8:
+			flash("The password must be at least 8 characters long.", "error")
+			return redirect(url_for("dashboard.manage_users"))
+
+		# Ensure username uniqueness
+		existing = User.query.filter_by(username=new_username).first()
+		if existing:
+			flash("This username is already in use.", "error")
+			return redirect(url_for("dashboard.manage_users"))
+
+		user = User(
+			username=new_username,
+			password=generate_password_hash(password),
+			is_admin=is_admin_flag,
+		)
+		try:
+			db.session.add(user)
+			db.session.commit()
+		except Exception:
+			db.session.rollback()
+			flash("An error occurred while creating the user.", "error")
+			return redirect(url_for("dashboard.manage_users"))
+
+		flash("User created successfully.", "success")
+		log_event(
+			action="admin_user_create",
+			message="Admin created a new user.",
+			status="success",
+			resource="dashboard.manage_users",
+			extra={"created_username": new_username, "created_is_admin": is_admin_flag},
+		)
+		return redirect(url_for("dashboard.manage_users"))
+
+	users = User.query.order_by(User.username.asc()).all()
+	# Compute per-user storage stats so admins can see how much space
+	# each account is consuming.
+	user_storage: dict[int, dict] = {}
+	for u in users:
+		try:
+			user_storage[u.id] = _compute_user_storage(u)
+		except Exception:
+			user_storage[u.id] = {
+				"used_bytes": 0,
+				"used_mb": 0.0,
+				"quota_mb": current_app.config.get("STORAGE_QUOTA_MB", 2048),
+				"used_pct": 0.0,
+				"remaining_mb": 0.0,
+				"status": "unknown",
+			}
+
+	return render_template("users.html", users=users, user_storage=user_storage)
+
+
+@dashboard_bp.route("/admin/users/<int:user_id>/password", methods=["POST"])
+@login_required
+@admin_required
+def admin_change_user_password(user_id: int):
+	"""Allow admins to change passwords of other users.
+
+	Constraints:
+	- Admins cannot change passwords of other admins.
+	- Admins cannot change their own password here (must use profile page
+	  with current password).
+	"""
+
+	target = User.query.get_or_404(user_id)
+
+	if target.id == current_user.id:
+		flash("Use the profile page to change your own password.", "error")
+		return redirect(url_for("dashboard.manage_users"))
+
+	if getattr(target, "is_admin", False):
+		flash("You cannot change the password of another admin user.", "error")
+		return redirect(url_for("dashboard.manage_users"))
+
+	new_password = request.form.get("new_password") or ""
+	confirm_password = request.form.get("confirm_password") or ""
+
+	if not new_password or not confirm_password:
+		flash("Please provide a new password and its confirmation.", "error")
+		return redirect(url_for("dashboard.manage_users"))
+
+	if new_password != confirm_password:
+		flash("New password and confirmation do not match.", "error")
+		return redirect(url_for("dashboard.manage_users"))
+
+	if len(new_password) < 8:
+		flash("The new password must be at least 8 characters long.", "error")
+		return redirect(url_for("dashboard.manage_users"))
+
+	target.password = generate_password_hash(new_password)
+	try:
+		db.session.commit()
+	except Exception:
+		db.session.rollback()
+		flash("An error occurred while updating the password.", "error")
+		return redirect(url_for("dashboard.manage_users"))
+
+	flash("Password updated successfully.", "success")
+	log_event(
+		action="admin_password_change_other",
+		message="Admin changed password of another user.",
+		status="success",
+		resource="dashboard.admin_change_user_password",
+		extra={"target_user_id": target.id, "target_username": target.username},
+	)
+	return redirect(url_for("dashboard.manage_users"))
+
+
 def build_dashboard_data(user: User | None):
 	"""Calcula KPIs y datasets del dashboard para el usuario (o global)."""
 
@@ -233,9 +389,17 @@ def build_dashboard_data(user: User | None):
 	start_24h = now - timedelta(hours=24)
 	start_7d = now - timedelta(days=6)
 
-	# Ficheros (puedes filtrar por user_id si lo deseas)
+	# Ficheros / análisis base
 	files_q = File.query
 	analyses_q = Analysis.query
+	alerts_q = Alert.query
+
+	# Si el usuario no es admin, limitamos todas las métricas a sus
+	# propios ficheros/análisis/alertas.
+	if user is not None and not getattr(user, "is_admin", False):
+		files_q = files_q.filter(File.user_id == user.id)
+		analyses_q = analyses_q.filter(Analysis.user_id == user.id)
+		alerts_q = alerts_q.filter(Alert.user_id == user.id)
 
 	total_uploads = files_q.count()
 	uploads_today = files_q.filter(File.upload_date >= today).count()
@@ -253,15 +417,22 @@ def build_dashboard_data(user: User | None):
 		Analysis.final_verdict == "critical"
 	).count()
 
-	# Almacenamiento global (todas las cuentas). La cuota se toma de la config.
-	used_bytes = db.session.query(db.func.coalesce(db.func.sum(File.size), 0)).scalar()
-	storage_quota_mb = current_app.config.get("STORAGE_QUOTA_MB", 2048)
-	storage_used_mb = round(used_bytes / (1024 * 1024), 1)
-	storage_used_pct = (
-		min(100, round((storage_used_mb / storage_quota_mb) * 100, 1))
-		if storage_quota_mb
-		else 0
-	)
+	# Almacenamiento: para admins se muestra el uso global; para usuarios
+	# normales, sólo su propio espacio consumido.
+	if user is not None and not getattr(user, "is_admin", False):
+		storage_stats = _compute_user_storage(user)
+		storage_used_mb = storage_stats["used_mb"]
+		storage_quota_mb = storage_stats["quota_mb"]
+		storage_used_pct = storage_stats["used_pct"]
+	else:
+		used_bytes = db.session.query(db.func.coalesce(db.func.sum(File.size), 0)).scalar()
+		storage_quota_mb = current_app.config.get("STORAGE_QUOTA_MB", 2048)
+		storage_used_mb = round(used_bytes / (1024 * 1024), 1)
+		storage_used_pct = (
+			min(100, round((storage_used_mb / storage_quota_mb) * 100, 1))
+			if storage_quota_mb
+			else 0
+		)
 
 	summary = {
 		"total_uploads": total_uploads,
@@ -306,11 +477,10 @@ def build_dashboard_data(user: User | None):
 
 	# Tipos de archivo analizados
 	# Preferimos usar file_type; si no, mime_type.
-	ft_rows = (
-		db.session.query(File.file_type, db.func.count(File.id))
-		.group_by(File.file_type)
-		.all()
-	)
+	ft_query = db.session.query(File.file_type, db.func.count(File.id))
+	if user is not None and not getattr(user, "is_admin", False):
+		ft_query = ft_query.filter(File.user_id == user.id)
+	ft_rows = ft_query.group_by(File.file_type).all()
 	labels, counts = [], []
 	other_count = 0
 	main_types = {"EXE", "PDF", "DOC", "JPG", "WAV"}
@@ -369,7 +539,7 @@ def build_dashboard_data(user: User | None):
 
 	# Recent alerts (unread first)
 	recent_alerts = (
-		Alert.query.order_by(Alert.is_read.asc(), Alert.created_at.desc())
+		alerts_q.order_by(Alert.is_read.asc(), Alert.created_at.desc())
 		.limit(10)
 		.all()
 	)
@@ -389,13 +559,14 @@ def build_dashboard_data(user: User | None):
 		)
 
 	# Últimos archivos analizados (join File + Analysis)
-	recent_files = (
+	recent_files_q = (
 		db.session.query(File, Analysis)
 		.join(Analysis, Analysis.file_id == File.id)
 		.order_by(Analysis.analyzed_at.desc())
-		.limit(10)
-		.all()
 	)
+	if user is not None and not getattr(user, "is_admin", False):
+		recent_files_q = recent_files_q.filter(File.user_id == user.id)
+	recent_files = recent_files_q.limit(10).all()
 
 	# Normalizamos a objetos "ligeros" para la plantilla / API
 	def human_size(num_bytes):
@@ -493,6 +664,7 @@ def yara_rules_index():
 		is_dir=is_dir,
 		rules_root=str(rules_root),
 		rules=rules,
+		can_manage_yara=getattr(current_user, "is_admin", False),
 	)
 
 
@@ -530,6 +702,7 @@ def _resolve_yara_rule_path(rel_path: str) -> Path | None:
 
 @dashboard_bp.route("/yara/rules/edit", methods=["GET", "POST"])
 @login_required
+@admin_required
 def yara_rule_edit():
 	"""Vista para editar el contenido de un fichero de reglas YARA."""
 
@@ -567,6 +740,7 @@ def yara_rule_edit():
 
 @dashboard_bp.route("/yara/rules/delete", methods=["POST"])
 @login_required
+@admin_required
 def yara_rule_delete():
 	"""Elimina un fichero de regla YARA dentro del directorio configurado."""
 
@@ -588,6 +762,7 @@ def yara_rule_delete():
 
 @dashboard_bp.route("/yara/rules/upload", methods=["POST"])
 @login_required
+@admin_required
 def yara_rule_upload():
 	"""Sube un nuevo fichero de regla YARA al directorio configurado."""
 
@@ -743,6 +918,9 @@ def logs_view():
 	per_page = 50
 
 	query = Log.query.order_by(Log.created_at.desc())
+	# Admins see all logs; normal users only see their own activity
+	if not getattr(current_user, "is_admin", False):
+		query = query.filter(Log.user_id == current_user.id)
 	pagination = query.paginate(page=page, per_page=per_page, error_out=False)
 	items = pagination.items
 
@@ -1100,6 +1278,9 @@ def files():
 		.outerjoin(User, User.id == File.user_id)
 		.order_by(File.upload_date.desc())
 	)
+	# Admins see all files; normal users only see their own uploads
+	if not getattr(current_user, "is_admin", False):
+		q_files = q_files.filter(File.user_id == current_user.id)
 
 	files_payload: list[dict] = []
 	for f, a, u in q_files.all():
@@ -1129,6 +1310,9 @@ def files():
 		.join(User, Analysis.user_id == User.id)
 		.order_by(Analysis.analyzed_at.desc())
 	)
+	# Admins see all analyses; normal users only see their own analyses
+	if not getattr(current_user, "is_admin", False):
+		q_analyses = q_analyses.filter(Analysis.user_id == current_user.id)
 
 	rows: list[dict] = []
 	for a, f, u in q_analyses.all():
@@ -1178,6 +1362,11 @@ def analysis_report(analysis_id: int):
 	"""
 
 	analysis = Analysis.query.get_or_404(analysis_id)
+	# Admins can see any report; normal users only their own analyses
+	if not getattr(current_user, "is_admin", False) and analysis.user_id != current_user.id:
+		flash("You do not have permission to view this analysis report.", "error")
+		return redirect(url_for("dashboard.files", tab="analyses"))
+
 	file_obj = analysis.file
 	user = analysis.user
 
@@ -1344,6 +1533,9 @@ def analysis_export_json(analysis_id: int):
 	"""
 
 	analysis = Analysis.query.get_or_404(analysis_id)
+	if not getattr(current_user, "is_admin", False) and analysis.user_id != current_user.id:
+		flash("You do not have permission to export this analysis.", "error")
+		return redirect(url_for("dashboard.files", tab="analyses"))
 	file_obj = analysis.file
 	alerts = (
 		Alert.query.filter_by(analysis_id=analysis.id)
@@ -1438,6 +1630,9 @@ def analysis_export_pdf(analysis_id: int):
 	from reportlab.lib import colors
 
 	analysis = Analysis.query.get_or_404(analysis_id)
+	if not getattr(current_user, "is_admin", False) and analysis.user_id != current_user.id:
+		flash("You do not have permission to export this analysis.", "error")
+		return redirect(url_for("dashboard.files", tab="analyses"))
 	file_obj = analysis.file
 	user = analysis.user
 	alerts = (

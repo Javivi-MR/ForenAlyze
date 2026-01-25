@@ -11,6 +11,7 @@ with app.app_context():
         user = User(
             username='admin',
             password=generate_password_hash('admin123'),
+            is_admin=True,
             image_url=None,
             notifications=0
         )

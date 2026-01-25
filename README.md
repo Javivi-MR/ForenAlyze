@@ -15,8 +15,13 @@ resultados desde una interfaz web cuidada, con énfasis en trazabilidad y experi
 
 - Autenticación con Flask‑Login (login/logout).
 - Usuario administrador creado mediante script (`create_admin.py`).
+- Roles diferenciados de usuario (admin / normal) con control de acceso
+  a vistas, logs, ficheros, análisis y reglas YARA.
 - Perfil con edición de datos básicos y cambio de contraseña.
 - Avatar configurable por usuario (almacenado en `app/static/avatars/`).
+- Panel de administración de usuarios (sólo admin) para crear cuentas,
+  resetear contraseñas de otros usuarios y consultar el espacio de
+  almacenamiento utilizado por cada uno.
 - **Campana de notificaciones** en la barra superior con contador y listado de alertas
   recientes (malware detectado, informes listos, etc.).
 
@@ -71,7 +76,7 @@ Ver sección **1.3. Pipeline de análisis** más arriba para el detalle técnico
 Estructura simplificada del proyecto:
 
 ```text
-ForenHub/
+ForenAlyze/
 ├─ run.py                 # Punto de entrada Flask / Gunicorn
 ├─ create_admin.py        # Crea usuario admin (admin/admin123)
 ├─ requirements.txt
@@ -112,8 +117,8 @@ En Windows se recomienda usar PowerShell.
 ### 3.2. Clonar el repositorio
 
 ```bash
-git clone https://github.com/Javivi-MR/ForenHub.git
-cd ForenHub
+git clone https://github.com/Javivi-MR/ForenAlyze.git
+cd ForenAlyze
 ```
 
 ### 3.3. Configuración de entorno (.env)
@@ -292,7 +297,8 @@ La aplicación quedará accesible en `http://127.0.0.1:8000`.
 - `YARA_RULES_PATH` puede apuntar a:
   - Un único fichero de reglas (`forenalyze.yar`).
   - Un directorio con múltiples ficheros de reglas.
-- Desde la interfaz **YARA rules** puedes:
+- Desde la interfaz **YARA rules** (lectura para todos los usuarios,
+  gestión completa sólo para administradores) puedes:
   - Ver el listado actual.
   - Subir nuevos ficheros (modo directorio).
   - Editar un fichero desde el navegador.
@@ -300,7 +306,7 @@ La aplicación quedará accesible en `http://127.0.0.1:8000`.
 
 Para utilizar reglas externas como `Neo23x0/signature-base` se recomienda:
 
-1. Clonar ese repositorio **fuera** de ForenHub (para no anidar repositorios).
+1. Clonar ese repositorio **fuera** de ForenAlyze (para no anidar repositorios).
 2. Apuntar `YARA_RULES_PATH` al subdirectorio adecuado (p.ej. `.../signature-base/yara`).
 3. Documentar en la memoria del TFM la procedencia y licencia de dichas reglas.
 
@@ -344,14 +350,6 @@ informe remoto en Hybrid Analysis.
   Analysis, etc.) y el tratamiento de las evidencias recae en el operador.
 - No se recomienda subir evidencias con datos personales o sensibles a
   servicios externos sin haber revisado cuidadosamente sus políticas.
-
-Limitaciones conocidas:
-
-- No hay interfaz para alta de nuevos usuarios (el admin se crea por script).
-- No se incluyen tests automatizados en esta versión.
-- Algunas funciones (espectrogramas, macros, YARA) dependen de librerías
-  opcionales; si no están instaladas, el sistema lo refleja en el informe y
-  continúa el análisis con el resto de módulos.
 
 ---
 

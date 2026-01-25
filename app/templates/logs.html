@@ -76,9 +76,11 @@
               <td class="small">
                 {% set st = entry.status or 'info' %}
                 <span class="badge
-                  {% if st == 'success' %} bg-success
-                  {% elif st in ['failed', 'error'] %} bg-danger
+                  {% if st in ['success', 'clean'] %} bg-success
+                  {% elif st in ['suspicious'] %} bg-warning text-dark
+                  {% elif st in ['malicious', 'critical'] %} bg-danger
                   {% elif st in ['warning', 'warn'] %} bg-warning text-dark
+                  {% elif st in ['failed', 'error'] %} bg-secondary
                   {% else %} bg-secondary{% endif %}">
                   {{ st }}
                 </span>

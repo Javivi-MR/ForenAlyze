@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from sqlalchemy import text
 
 from .config import Config
@@ -33,6 +33,61 @@ def create_app():
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
+
+    @app.after_request
+    def apply_security_headers(response):
+        """Añade cabeceras de seguridad HTTP por defecto.
+
+        Muchas de estas defensas también se pueden configurar en el
+        reverse proxy (Nginx, etc.), pero las fijamos aquí para que la
+        aplicación sea razonablemente segura por sí misma.
+        """
+
+        # Evita que la app se embeba en iframes (clickjacking)
+        response.headers.setdefault("X-Frame-Options", "DENY")
+
+        # Evita que el navegador intente adivinar tipos de contenido
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+
+        # Política de referer restrictiva
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+
+        # Protección XSS heredada (algunos navegadores antiguos)
+        response.headers.setdefault("X-XSS-Protection", "1; mode=block")
+
+        # Política de permisos de navegador (APIs potentes)
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "geolocation=(), microphone=(), camera=(), payment=(), usb=()",
+        )
+
+        # Content Security Policy básica. Permitimos 'unsafe-inline' porque
+        # la app usa algunos scripts/estilos embebidos; si se refactoriza a
+        # ficheros estáticos se puede endurecer eliminando esa directiva.
+        #
+        # También autorizamos el CDN jsDelivr, usado para Bootstrap, AOS,
+        # Chart.js, SweetAlert2 y algunos iconos en la página About.
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "img-src 'self' data: https://cdn.jsdelivr.net; "
+            "font-src 'self' data: https://cdn.jsdelivr.net; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'"
+        )
+        response.headers.setdefault("Content-Security-Policy", csp)
+
+        # HSTS sólo tiene sentido sobre HTTPS; comprobamos si la petición
+        # ha llegado por un canal seguro.
+        if request.is_secure:
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains; preload",
+            )
+
+        return response
 
     @app.route("/")
     def index():

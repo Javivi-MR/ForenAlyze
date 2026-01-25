@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from flask_login import UserMixin
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, Boolean
 from sqlalchemy.orm import relationship
 
 from .extensions import db
@@ -11,6 +11,7 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), unique=True, nullable=False)
     password = db.Column(db.String(128), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
     image_url = db.Column(db.String(256), nullable=True)
     notifications = db.Column(db.Integer, default=0)
 
