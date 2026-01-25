@@ -145,9 +145,6 @@ cd ForenAlyze
    - `TIKA_ENABLED`, `TIKA_SERVER_URL` – si vas a usar Apache Tika.
    - `SANDBOX_*` – sólo si vas a probar el hook de sandbox / Hybrid Analysis.
 
-> Nota: en desarrollo, `app/config.py` también admite leer `VIRUSTOTAL_API_KEY`
-> desde `venv/pyvenv.cfg` (clave `virustotal_api_key`).
-
 ### 3.4. Entorno virtual y dependencias (modo local)
 
 ```bash
@@ -200,6 +197,10 @@ python create_admin.py
 
 - Si no existe, creará el usuario `admin` con contraseña `admin123`.
 - Si ya existe, mostrará un mensaje indicándolo.
+
+> Por motivos de seguridad, se recomienda cambiar la contraseña
+> por defecto del usuario `admin` en el primer inicio de sesión
+> utilizando la pantalla de perfil de usuario.
 
 ### 3.7. Ejecutar la aplicación en local
 
