@@ -356,7 +356,7 @@ informe remoto en Hybrid Analysis.
 
 ---
 
-## 6. Seguridad, privacidad y limitaciones
+## 6. Seguridad y privacidad
 
 - El proyecto está orientado a un contexto **académico / de laboratorio**.
 - No sustituye herramientas forenses certificadas ni productos comerciales.
