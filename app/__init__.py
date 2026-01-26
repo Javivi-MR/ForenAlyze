@@ -10,7 +10,7 @@ except ImportError:
     load_dotenv = None
 
 
-def create_app():
+def create_app(config_class: type[Config] = Config):
     if load_dotenv is not None:
         # Cargamos variables de entorno desde un fichero .env en entorno de
         # desarrollo. Las variables ya definidas en el entorno del sistema
@@ -18,7 +18,7 @@ def create_app():
         load_dotenv(override=False)
 
     app = Flask(__name__)
-    app.config.from_object(Config)
+    app.config.from_object(config_class)
 
     db.init_app(app)
     login_manager.init_app(app)
