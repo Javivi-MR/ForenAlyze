@@ -31,5 +31,6 @@ jobs:
           # Usamos SQLite para los tests en vez de PostgreSQL
           DATABASE_URL: "sqlite:///:memory:"
           FLASK_ENV: testing
+          PYTHONPATH: "${{ github.workspace }}"
         run: |
           pytest -q
