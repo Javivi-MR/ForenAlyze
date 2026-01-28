@@ -23,9 +23,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Asegurar permisos de ejecución para el script de entrada
+RUN chmod +x /app/entrypoint.sh
+
 # Default CLAMAV_PATH relies on `clamscan` being in PATH
 ENV CLAMAV_PATH=clamscan \
     FLASK_APP=run.py
 
-# By default, run the Flask app with gunicorn in production
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "run:app"]
+# Usar script de entrada que aplica migraciones, crea admin si falta y arranca gunicorn
+CMD ["/app/entrypoint.sh"]
