@@ -27,3 +27,12 @@ psycopg2-binary>=2.9.9
 
 # Generación de informes PDF
 reportlab>=4.0.7
+
+# Servidor WSGI para despliegue en Docker
+gunicorn>=21.2.0
+
+# Migraciones de base de datos (Alembic, usado por Flask-Migrate)
+alembic>=1.13.0
+
+# Herramientas de testing
+pytest>=7.4.0
