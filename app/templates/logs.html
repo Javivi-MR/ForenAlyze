@@ -67,7 +67,9 @@
           {% if logs and logs|length > 0 %}
             {% for entry in logs %}
             <tr>
-              <td class="small text-nowrap">{{ entry.created_at }}</td>
+              <td class="small text-nowrap">
+                {{ (entry.created_at|string)[:19] if entry.created_at else '' }}
+              </td>
               <td class="small">{{ entry.username or 'N/A' }}</td>
               <td class="small">{{ entry.action }}</td>
               <td class="small text-truncate" style="max-width: 160px;">
@@ -98,7 +100,7 @@
                   data-bs-target="#logDetailsModal"
                   data-log='{{ {
                     "id": entry.id,
-                    "created_at": entry.created_at,
+                    "created_at": (entry.created_at|string)[:19] if entry.created_at else '',
                     "username": entry.username,
                     "action": entry.action,
                     "resource": entry.resource,

@@ -63,18 +63,18 @@
             </div>
             <div class="table-responsive">
               <table class="table table-dark table-sm align-middle mb-0">
-                <thead>
+                <thead class="small text-uppercase text-muted text-center">
                   <tr>
-                    <th scope="col">Rule file</th>
-                    <th scope="col" style="width: 120px;">Size</th>
-                    <th scope="col" style="width: 200px;">Last modified</th>
-                    <th scope="col" style="width: 160px;">Actions</th>
+                    <th scope="col" class="text-start">Rule file</th>
+                    <th scope="col" class="text-center" style="width: 120px;">Size</th>
+                    <th scope="col" class="text-center" style="width: 200px;">Last modified</th>
+                    <th scope="col" class="text-center" style="width: 160px;">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {% for r in rules %}
                   <tr>
-                    <td>
+                    <td class="small">
                       {% if can_manage_yara %}
                         <a href="{{ url_for('dashboard.yara_rule_edit', path=r.name) }}" class="link-light text-decoration-none">
                           {{ r.name }}
@@ -83,9 +83,11 @@
                         <span class="text-light">{{ r.name }}</span>
                       {% endif %}
                     </td>
-                    <td>{{ (r.size / 1024)|round(1) }} KB</td>
-                    <td>{{ r.mtime }}</td>
-                    <td>
+                    <td class="small text-center">{{ (r.size / 1024)|round(1) }} KB</td>
+                    <td class="small text-center">
+                      {{ (r.mtime|string)[:19] if r.mtime else '' }}
+                    </td>
+                    <td class="text-center">
                       {% if can_manage_yara %}
                         <a href="{{ url_for('dashboard.yara_rule_edit', path=r.name) }}" class="btn btn-sm btn-outline-secondary me-1">Edit</a>
                         {% if is_dir %}
@@ -105,6 +107,41 @@
             </div>
           {% else %}
             <p class="text-muted mb-0">No YARA rule files have been found under the configured path.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card bg-dark text-light mb-3">
+        <div class="card-header border-0">
+          <span class="fw-semibold">YARA overview</span>
+        </div>
+        <div class="card-body small">
+          {% if not rules_root %}
+            <p class="text-muted mb-0">YARA is disabled or YARA_RULES_PATH is not correctly configured.</p>
+          {% elif rules and rules|length > 0 %}
+            {% set total_rules = rules|length %}
+            {% set total_size = rules|sum(attribute='size') %}
+            {% set latest_rule = rules|sort(attribute='mtime')|last %}
+            <p class="text-muted mb-2">Quick summary of the loaded YARA rule files.</p>
+            <dl class="row mb-0">
+              <dt class="col-6 text-muted">Rule files</dt>
+              <dd class="col-6">{{ total_rules }}</dd>
+              <dt class="col-6 text-muted">Total size</dt>
+              <dd class="col-6">
+                {{ (total_size / 1024 / 1024)|round(2) }} MB
+              </dd>
+              <dt class="col-6 text-muted">Last updated</dt>
+              <dd class="col-6">
+                {% if latest_rule and latest_rule.mtime %}
+                  {{ (latest_rule.mtime|string)[:19] }}
+                {% else %}
+                  -
+                {% endif %}
+              </dd>
+            </dl>
+          {% else %}
+            <p class="text-muted mb-0">No YARA rule files are currently loaded.</p>
           {% endif %}
         </div>
       </div>

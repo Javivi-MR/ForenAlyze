@@ -221,7 +221,13 @@
               {% for item in recent_files %}
               <tr>
                 <td class="small text-nowrap">
-                  {{ item.analyzed_at or item.upload_date }}
+                  {% if item.analyzed_at %}
+                    {{ (item.analyzed_at|string)[:19] }}
+                  {% elif item.upload_date %}
+                    {{ (item.upload_date|string)[:19] }}
+                  {% else %}
+                    
+                  {% endif %}
                 </td>
                 <td class="text-truncate" style="max-width: 200px;">
                   {{ item.filename_original }}

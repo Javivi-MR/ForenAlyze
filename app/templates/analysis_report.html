@@ -154,11 +154,23 @@ document.addEventListener('DOMContentLoaded', function () {
           <div class="row small mb-3">
             <div class="col-md-4">
               <div class="text-muted">Uploaded</div>
-              <div>{{ file_info.upload_date or 'N/D' }}</div>
+              <div>
+                {% if file_info.upload_date %}
+                  {{ (file_info.upload_date|string)[:19] }}
+                {% else %}
+                  N/D
+                {% endif %}
+              </div>
             </div>
             <div class="col-md-4">
               <div class="text-muted">Analyzed</div>
-              <div>{{ analysis.analyzed_at or 'N/D' }}</div>
+              <div>
+                {% if analysis.analyzed_at %}
+                  {{ (analysis.analyzed_at|string)[:19] }}
+                {% else %}
+                  N/D
+                {% endif %}
+              </div>
             </div>
             <div class="col-md-4">
               <div class="text-muted">Storage path</div>

@@ -1560,97 +1560,106 @@ def _extract_lsb_text_from_wav(path: Path) -> dict | None:
 
     # Cada muestra ocupa ``sampwidth`` bytes; como no necesitamos el
     # valor completo, nos basta con el primer byte (LSB en little-endian).
+    # Probamos varios modos sencillos de extracción (1 y 2 bits por
+    # muestra) para ser compatibles con esquemas tipo ste.gg que usan
+    # más de un bit de los LSB.
     max_bytes = 131_072  # ~128 KB de mensaje máximo
     max_bits = max_bytes * 8
-    bits: list[int] = []
 
-    step = sampwidth  # avanzamos muestra a muestra (canales intercalados)
-    for i in range(0, len(raw_frames), step):
-        if len(bits) >= max_bits:
-            break
-        sample = raw_frames[i : i + sampwidth]
-        if len(sample) < sampwidth:
-            break
-        bits.append(sample[0] & 1)
+    def _extract_bits(bits_per_sample: int) -> list[int]:
+        bits: list[int] = []
+        step = sampwidth  # avanzamos muestra a muestra (canales intercalados)
+        for i in range(0, len(raw_frames), step):
+            if len(bits) >= max_bits:
+                break
+            sample = raw_frames[i : i + sampwidth]
+            if len(sample) < sampwidth:
+                break
+            byte0 = sample[0]
+            for bit_index in range(bits_per_sample):
+                if len(bits) >= max_bits:
+                    break
+                bits.append((byte0 >> bit_index) & 1)
+        return bits
 
-    if len(bits) < 8:
-        return None
+    best_result: dict | None = None
 
-    data = _bits_to_bytes(bits, max_bytes=max_bytes)
+    # Probamos primero 2 bits por muestra (alta capacidad), luego 1 bit
+    # como fallback. Nos quedamos con el resultado que produzca el
+    # mensaje imprimible más largo.
+    for source_name, bits_per_sample in [("audio_lsb_2bit", 2), ("audio_lsb_1bit", 1)]:
+        bits = _extract_bits(bits_per_sample)
+        if len(bits) < 8:
+            continue
 
-    # Estrategia específica para audio WAV: asumimos que, si hay un
-    # mensaje LSB "sencillo", comienza en la primera muestra. Por eso
-    # intentamos primero extraer un prefijo continuo de caracteres
-    # imprimibles desde el inicio del flujo de bytes, en vez de buscar
-    # la racha más larga en cualquier posición.
-    try:
-        decoded = data.decode("utf-8", errors="ignore")
-    except Exception:  # pragma: no cover
-        return None
+        data = _bits_to_bytes(bits, max_bytes=max_bytes)
 
-    prefix_chars: list[str] = []
-    for ch in decoded:
-        if ch.isprintable() or ch in "\r\n\t":
-            prefix_chars.append(ch)
-        else:
-            break
+        # Para audio usamos la misma heurística de "racha imprimible
+        # larga" que para imágenes, en lugar de asumir que el mensaje
+        # empieza en el primer sample. Esto permite detectar esquemas
+        # que añaden cabeceras o metadata antes del payload.
+        snippet = _extract_long_printable_run(data, min_len=16)
+        if not snippet:
+            continue
 
-    snippet = "".join(prefix_chars).strip()
-
-    # Si el prefijo imprimible inicial es demasiado corto, lo
-    # consideramos ruido y no intentamos recuperar nada.
-    if len(snippet) < 16:
-        return None
-
-    # Para audio intentamos una decodificación base64 aún más laxa que
-    # la heurística genérica: probamos directamente a interpretar el
-    # snippet como base64, añadiendo padding si es necesario y usando
-    # validate=False. Si la decodificación falla o produce salida
-    # vacía, simplemente no se marca como base64.
-    base64_info = None
-    try:
-        candidate = "".join(ch for ch in snippet if not ch.isspace())
-        if len(candidate) >= 24:
-            padded = candidate + "=" * ((4 - len(candidate) % 4) % 4)
-            decoded_bytes = base64.b64decode(padded, validate=False)
-            if decoded_bytes:
-                try:
-                    decoded_text = decoded_bytes.decode("utf-8", errors="ignore")
-                except Exception:  # pragma: no cover
-                    decoded_text = ""
-
-                preview = (decoded_text or repr(decoded_bytes))[:200]
-                base64_info = {
-                    "decoded_preview": preview,
-                    "decoded_length": len(decoded_text) or len(decoded_bytes),
-                    "decoded_full": decoded_text or None,
-                }
-    except Exception:  # pragma: no cover
+        # Para audio intentamos una decodificación base64 aún más laxa que
+        # la heurística genérica. Si no parece texto humano ni base64
+        # razonable, lo tratamos como ruido.
         base64_info = None
+        try:
+            candidate = "".join(ch for ch in snippet if not ch.isspace())
+            if len(candidate) >= 24:
+                padded = candidate + "=" * ((4 - len(candidate) % 4) % 4)
+                decoded_bytes = base64.b64decode(padded, validate=False)
+                if decoded_bytes:
+                    try:
+                        decoded_text = decoded_bytes.decode("utf-8", errors="ignore")
+                    except Exception:  # pragma: no cover
+                        decoded_text = ""
 
-    result: dict = {
-        "source": "audio_lsb",
-        "hidden_text_preview": snippet[:200],
-        "hidden_text_length": len(snippet),
-        "hidden_text_full": snippet,
-        "encoding": "base64" if base64_info else "plain_or_unknown",
-    }
+                    preview = (decoded_text or repr(decoded_bytes))[:200]
+                    base64_info = {
+                        "decoded_preview": preview,
+                        "decoded_length": len(decoded_text) or len(decoded_bytes),
+                        "decoded_full": decoded_text or None,
+                    }
+        except Exception:  # pragma: no cover
+            base64_info = None
 
-    if base64_info:
-        code_info = _analyze_code_snippet(
-            base64_info.get("decoded_full") or base64_info["decoded_preview"]
-        )
-        result.update(
-            {
-                "base64_decoded_preview": base64_info["decoded_preview"][:200],
-                "base64_decoded_length": base64_info["decoded_length"],
-                "base64_decoded_full": base64_info.get("decoded_full"),
-                "language": (code_info or {}).get("language"),
-                "suspicious_calls": list((code_info or {}).get("suspicious_calls") or []),
-            }
-        )
+        # Si no es base64 decente ni se parece a texto humano,
+        # descartamos este modo como falso positivo.
+        if not base64_info and not _looks_like_human_text(snippet):
+            continue
 
-    return result
+        result: dict = {
+            "source": source_name,
+            "hidden_text_preview": snippet[:200],
+            "hidden_text_length": len(snippet),
+            "hidden_text_full": snippet,
+            "encoding": "base64" if base64_info else "plain_or_unknown",
+            "bits_per_sample": bits_per_sample,
+        }
+
+        if base64_info:
+            code_info = _analyze_code_snippet(
+                base64_info.get("decoded_full") or base64_info["decoded_preview"]
+            )
+            result.update(
+                {
+                    "base64_decoded_preview": base64_info["decoded_preview"][:200],
+                    "base64_decoded_length": base64_info["decoded_length"],
+                    "base64_decoded_full": base64_info.get("decoded_full"),
+                    "language": (code_info or {}).get("language"),
+                    "suspicious_calls": list((code_info or {}).get("suspicious_calls") or []),
+                }
+            )
+
+        if not best_result or result["hidden_text_length"] > best_result.get(
+            "hidden_text_length", 0
+        ):
+            best_result = result
+
+    return best_result
 
 
 def _analyze_steganography(path: Path, mime_type: str) -> tuple[str, Dict[str, Any] | None]:

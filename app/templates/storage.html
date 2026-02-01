@@ -152,7 +152,7 @@
                 </span>
               </td>
               <td class="small text-nowrap">
-                {{ f.upload_date or '' }}
+                {{ (f.upload_date|string)[:19] if f.upload_date else '' }}
               </td>
               <td class="text-end">
                 <form
