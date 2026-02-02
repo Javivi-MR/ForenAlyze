@@ -36,6 +36,24 @@
 <div class="container-fluid py-3 py-lg-4 dashboard-page">
   <div class="row g-3 g-lg-4">
     <div class="col-lg-10 col-xl-8">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            {% set alert_class = 'alert-info' %}
+            {% if category == 'success' %}
+              {% set alert_class = 'alert-success' %}
+            {% elif category in ['error', 'danger'] %}
+              {% set alert_class = 'alert-danger' %}
+            {% elif category == 'warning' %}
+              {% set alert_class = 'alert-warning' %}
+            {% endif %}
+            <div class="alert {{ alert_class }} alert-dismissible fade show small" role="alert">
+              {{ message }}
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
       <div class="card bg-dark text-light mb-3">
         <div class="card-header border-0 d-flex justify-content-between align-items-center">
           <div>

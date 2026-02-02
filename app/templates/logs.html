@@ -50,16 +50,16 @@
       {% endif %}
     </div>
     <div class="table-responsive">
-      <table class="table table-dark table-hover table-sm align-middle mb-0">
-        <thead class="small text-uppercase text-muted">
+      <table class="table table-dark table-hover table-sm align-middle mb-0 text-center">
+        <thead class="small text-uppercase text-muted text-center">
           <tr>
-            <th class="text-nowrap">Timestamp</th>
-            <th>User</th>
-            <th>Action</th>
-            <th>Resource</th>
-            <th>Status</th>
-            <th class="text-nowrap">IP</th>
-            <th class="text-nowrap">Message</th>
+            <th class="text-nowrap text-center">Timestamp</th>
+            <th class="text-center">User</th>
+            <th class="text-center">Action</th>
+            <th class="text-center">Resource</th>
+            <th class="text-center">Status</th>
+            <th class="text-nowrap text-center">IP</th>
+            <th class="text-nowrap text-center">Message</th>
             <th class="text-center">Details</th>
           </tr>
         </thead>
@@ -67,15 +67,15 @@
           {% if logs and logs|length > 0 %}
             {% for entry in logs %}
             <tr>
-              <td class="small text-nowrap">
+              <td class="small text-nowrap text-center">
                 {{ (entry.created_at|string)[:19] if entry.created_at else '' }}
               </td>
-              <td class="small">{{ entry.username or 'N/A' }}</td>
-              <td class="small">{{ entry.action }}</td>
-              <td class="small text-truncate" style="max-width: 160px;">
+              <td class="small text-center">{{ entry.username or 'N/A' }}</td>
+              <td class="small text-center">{{ entry.action }}</td>
+              <td class="small text-truncate text-center" style="max-width: 160px;">
                 {{ entry.resource or '-' }}
               </td>
-              <td class="small">
+              <td class="small text-center">
                 {% set st = entry.status or 'info' %}
                 <span class="badge
                   {% if st in ['success', 'clean'] %} bg-success
@@ -87,8 +87,8 @@
                   {{ st }}
                 </span>
               </td>
-              <td class="small text-nowrap">{{ entry.ip_address or '-' }}</td>
-              <td class="small text-truncate" style="max-width: 260px;">
+              <td class="small text-nowrap text-center">{{ entry.ip_address or '-' }}</td>
+              <td class="small text-truncate text-center" style="max-width: 260px;">
                 {{ entry.message or '-' }}
               </td>
               <td class="text-center">

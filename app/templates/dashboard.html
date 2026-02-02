@@ -205,22 +205,22 @@
           <span class="fw-semibold">Latest analyzed files</span>
         </div>
         <div class="table-responsive">
-          <table class="table table-dark table-hover table-sm align-middle mb-0">
-            <thead class="small text-uppercase text-muted">
+          <table class="table table-dark table-hover table-sm align-middle mb-0 text-center">
+            <thead class="small text-uppercase text-muted text-center">
               <tr>
-                <th>Date</th>
-                <th>File</th>
-                <th>Type</th>
-                <th>Size</th>
-                <th>SHA256</th>
-                <th>Status</th>
-                <th class="text-end">Actions</th>
+                <th class="text-center">Date</th>
+                <th class="text-center">File</th>
+                <th class="text-center">Type</th>
+                <th class="text-center">Size</th>
+                <th class="text-center">SHA256</th>
+                <th class="text-center">Status</th>
+                <th class="text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {% for item in recent_files %}
               <tr>
-                <td class="small text-nowrap">
+                <td class="small text-nowrap text-center">
                   {% if item.analyzed_at %}
                     {{ (item.analyzed_at|string)[:19] }}
                   {% elif item.upload_date %}
@@ -229,19 +229,19 @@
                     
                   {% endif %}
                 </td>
-                <td class="text-truncate" style="max-width: 200px;">
+                <td class="text-truncate text-center" style="max-width: 200px;">
                   {{ item.filename_original }}
                 </td>
-                <td class="small">
+                <td class="small text-center">
                   {{ item.file_type or item.mime_type }}
                 </td>
-                <td class="small">
+                <td class="small text-center">
                   {{ item.size_human }}
                 </td>
-                <td class="small text-truncate" style="max-width: 220px;">
+                <td class="small text-truncate text-center" style="max-width: 220px;">
                   {{ item.sha256 }}
                 </td>
-                <td>
+                <td class="text-center">
                   {% set v = item.final_verdict %}
                   <span class="badge
                     {% if v == 'clean' %} bg-success
@@ -252,7 +252,7 @@
                     {{ v or 'N/D' }}
                   </span>
                 </td>
-                <td class="text-end">
+                <td class="text-center">
                   {% if item.analysis_id %}
                   <a href="/analysis/{{ item.analysis_id }}/report" class="btn btn-outline-secondary btn-sm">Report</a>
                   {% else %}

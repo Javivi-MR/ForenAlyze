@@ -26,7 +26,7 @@ from werkzeug.utils import secure_filename
 from app.extensions import db
 from app.models import Alert, Analysis, File, Log, User
 from app.services.alerts import create_alerts_for_analysis
-from app.analysis.pipeline import analyze_file
+from app.analysis.pipeline import analyze_file, yara as yara_engine
 from app.services.logs import log_event
 
 
@@ -67,6 +67,28 @@ def _get_yara_rules_root() -> Path | None:
 	if not root_path.exists():
 		return None
 	return root_path
+
+
+def _validate_yara_source(content: str, origin: str = "<memory>") -> tuple[bool | None, str | None]:
+	"""Valida sintaxis de reglas YARA utilizando yara-python.
+
+	Devuelve:
+	- (True, None): reglas válidas
+	- (False, msg): error de sintaxis u otro problema al compilar
+	- (None, msg): motor YARA no disponible (validación omitida)
+	"""
+
+	if yara_engine is None:  # dependencia opcional
+		return None, "YARA engine is not available; syntax validation was skipped."
+
+	try:
+		# Compilamos desde texto para validar el contenido tal cual se va a guardar.
+		# Usamos yara.compile(source=...) directamente; si hay cualquier problema
+		# de sintaxis en el bloque, lanzará una excepción.
+		yara_engine.compile(source=content)  # type: ignore[arg-type]
+		return True, None
+	except Exception as exc:  # pragma: no cover - dependiente de reglas concretas
+		return False, f"{origin}: {exc}"
 
 
 @dashboard_bp.route("/dashboard", methods=["GET"])
@@ -713,7 +735,28 @@ def yara_rule_edit():
 		return redirect(url_for("dashboard.yara_rules_index"))
 
 	if request.method == "POST":
-		content = request.form.get("content") or ""
+		# Normalizamos finales de línea para evitar que se vayan
+		# duplicando los saltos en cada guardado (CRLF vs LF).
+		content_raw = request.form.get("content") or ""
+		content = content_raw.replace("\r\n", "\n").replace("\r", "\n")
+
+		# Validamos sintaxis de las reglas antes de guardar cambios.
+		ok, error_msg = _validate_yara_source(content, origin=rel_path or path.name)
+		if ok is False:
+			flash(
+				"YARA rule file was not saved due to a syntax error. "
+				"Please review the error details and fix the rule.",
+				"error",
+			)
+			if error_msg:
+				flash(error_msg, "error")
+			return render_template(
+				"yara_rule_edit.html",
+				file_path=str(path),
+				rel_path=rel_path or path.name,
+				content=content,
+			)
+
 		try:
 			path.write_text(content, encoding="utf-8")
 		except Exception:
@@ -722,6 +765,9 @@ def yara_rule_edit():
 				url_for("dashboard.yara_rule_edit", path=rel_path or path.name)
 			)
 
+		if ok is None and error_msg:
+			# Motor YARA no disponible: avisamos pero permitimos guardar.
+			flash(error_msg, "warning")
 		flash("YARA rule file saved.", "success")
 		return redirect(url_for("dashboard.yara_rules_index"))
 
@@ -781,14 +827,33 @@ def yara_rule_upload():
 		flash("Unsupported file extension for YARA rule.", "error")
 		return redirect(url_for("dashboard.yara_rules_index"))
 
+	# Leemos el contenido para validar sintaxis antes de guardar en disco.
+	file_bytes = file.read() or b""
+	try:
+		content_text = file_bytes.decode("utf-8", errors="ignore")
+	except Exception:
+		content_text = ""
+
+	ok, error_msg = _validate_yara_source(content_text, origin=file.filename)
+	if ok is False:
+		flash(
+			"Uploaded YARA rule file was rejected due to a syntax error.",
+			"error",
+		)
+		if error_msg:
+			flash(error_msg, "error")
+		return redirect(url_for("dashboard.yara_rules_index"))
+
 	filename = secure_filename(file.filename)
 	target = rules_root / filename
 	try:
-		file.save(str(target))
+		target.write_bytes(file_bytes)
 	except Exception:
 		flash("Error while saving the uploaded YARA rule file.", "error")
 		return redirect(url_for("dashboard.yara_rules_index"))
 
+	if ok is None and error_msg:
+		flash(error_msg, "warning")
 	flash("YARA rule file uploaded.", "success")
 	return redirect(url_for("dashboard.yara_rules_index"))
 
@@ -1766,16 +1831,18 @@ def analysis_export_pdf(analysis_id: int):
 	content_top = height - 60 - 24  # below header bar
 	y = content_top
 
-	bg_page = colors.HexColor("#020617")
-	bg_header = colors.HexColor("#111827")
-	text_main = colors.HexColor("#e5e7eb")
-	text_muted = colors.HexColor("#9ca3af")
-	accent_primary = colors.HexColor("#60a5fa")
-	accent_success = colors.HexColor("#22c55e")
-	accent_warning = colors.HexColor("#eab308")
-	accent_danger = colors.HexColor("#ef4444")
-	accent_secondary = colors.HexColor("#6b7280")
-	border_soft = colors.HexColor("#1f2937")
+	# Paleta adaptada para impresión en papel: fondo blanco, texto oscuro y
+	# acentos suaves inspirados en la interfaz web.
+	bg_page = colors.white
+	bg_header = colors.HexColor("#e5e7eb")
+	text_main = colors.HexColor("#111827")
+	text_muted = colors.HexColor("#6b7280")
+	accent_primary = colors.HexColor("#1d4ed8")
+	accent_success = colors.HexColor("#15803d")
+	accent_warning = colors.HexColor("#b45309")
+	accent_danger = colors.HexColor("#b91c1c")
+	accent_secondary = colors.HexColor("#4b5563")
+	border_soft = colors.HexColor("#d1d5db")
 
 	pdf = canvas.Canvas(buffer, pagesize=A4)
 	pdf.setTitle(f"Forenalyze analysis #{analysis.id}")

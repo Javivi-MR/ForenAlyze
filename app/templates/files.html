@@ -64,14 +64,14 @@
       </span>
     </div>
     <div class="table-responsive">
-      <table class="table table-dark table-hover table-sm align-middle mb-0">
-        <thead class="small text-uppercase text-muted">
+      <table class="table table-dark table-hover table-sm align-middle mb-0 text-center">
+        <thead class="small text-uppercase text-muted text-center">
           <tr>
-            <th>Name</th>
-            <th>Type</th>
-            <th>Size</th>
-            <th>Status</th>
-            <th>Uploaded</th>
+            <th class="text-center">Name</th>
+            <th class="text-center">Type</th>
+            <th class="text-center">Size</th>
+            <th class="text-center">Status</th>
+            <th class="text-center">Uploaded</th>
             <th class="text-center">Info</th>
           </tr>
         </thead>
@@ -79,16 +79,16 @@
           {% if files and files|length > 0 %}
             {% for f in files %}
             <tr>
-              <td class="text-truncate" style="max-width: 240px;">
+              <td class="text-truncate text-center" style="max-width: 240px;">
                 {{ f.filename_original }}
               </td>
-              <td class="small">
+              <td class="small text-center">
                 {{ f.file_type or f.mime_type }}
               </td>
-              <td class="small">
+              <td class="small text-center">
                 {{ f.size_human }}
               </td>
-              <td>
+              <td class="text-center">
                 {% set v = f.final_verdict %}
                 <span class="badge
                   {% if v == 'clean' %} bg-success
@@ -99,7 +99,7 @@
                   {{ v or 'pending' }}
                 </span>
               </td>
-              <td class="small text-nowrap">
+              <td class="small text-nowrap text-center">
                 {{ (f.upload_date|string)[:19] if f.upload_date else '' }}
               </td>
               <td class="text-center">

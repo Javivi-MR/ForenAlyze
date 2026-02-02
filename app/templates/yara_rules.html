@@ -33,6 +33,24 @@
 <div class="container-fluid py-3 py-lg-4 dashboard-page">
   <div class="row g-3 g-lg-4">
     <div class="col-lg-8">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            {% set alert_class = 'alert-info' %}
+            {% if category == 'success' %}
+              {% set alert_class = 'alert-success' %}
+            {% elif category in ['error', 'danger'] %}
+              {% set alert_class = 'alert-danger' %}
+            {% elif category == 'warning' %}
+              {% set alert_class = 'alert-warning' %}
+            {% endif %}
+            <div class="alert {{ alert_class }} alert-dismissible fade show small" role="alert">
+              {{ message }}
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
       <div class="card bg-dark text-light mb-3">
         <div class="card-header border-0 d-flex justify-content-between align-items-center">
           <div>
@@ -62,10 +80,10 @@
               {% endif %}
             </div>
             <div class="table-responsive">
-              <table class="table table-dark table-sm align-middle mb-0">
+              <table class="table table-dark table-sm align-middle mb-0 text-center">
                 <thead class="small text-uppercase text-muted text-center">
                   <tr>
-                    <th scope="col" class="text-start">Rule file</th>
+                    <th scope="col" class="text-center">Rule file</th>
                     <th scope="col" class="text-center" style="width: 120px;">Size</th>
                     <th scope="col" class="text-center" style="width: 200px;">Last modified</th>
                     <th scope="col" class="text-center" style="width: 160px;">Actions</th>
@@ -74,7 +92,7 @@
                 <tbody>
                   {% for r in rules %}
                   <tr>
-                    <td class="small">
+                    <td class="small text-center">
                       {% if can_manage_yara %}
                         <a href="{{ url_for('dashboard.yara_rule_edit', path=r.name) }}" class="link-light text-decoration-none">
                           {{ r.name }}
@@ -91,7 +109,12 @@
                       {% if can_manage_yara %}
                         <a href="{{ url_for('dashboard.yara_rule_edit', path=r.name) }}" class="btn btn-sm btn-outline-secondary me-1">Edit</a>
                         {% if is_dir %}
-                        <form method="post" action="{{ url_for('dashboard.yara_rule_delete') }}" class="d-inline" onsubmit="return confirm('Delete this YARA rule file?');">
+                        <form
+                          method="post"
+                          action="{{ url_for('dashboard.yara_rule_delete') }}"
+                          class="d-inline js-yara-delete-form"
+                          data-rule-name="{{ r.name }}"
+                        >
                           <input type="hidden" name="path" value="{{ r.name }}">
                           <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                         </form>
@@ -149,3 +172,39 @@
   </div>
 </div>
 {% endblock %}
+
+      {% block extra_js %}
+      <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+      <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const forms = document.querySelectorAll(".js-yara-delete-form");
+        if (!forms.length || typeof Swal === "undefined") {
+          return;
+        }
+
+        forms.forEach((form) => {
+          form.addEventListener("submit", (event) => {
+            event.preventDefault();
+            const ruleName = form.getAttribute("data-rule-name") || "this YARA rule file";
+
+            Swal.fire({
+              icon: "warning",
+              title: "Delete YARA rule?",
+              text: `Are you sure you want to delete "${ruleName}"? This action cannot be undone.`,
+              background: "#181f2a",
+              color: "#e5e7eb",
+              showCancelButton: true,
+              confirmButtonText: "Yes, delete",
+              cancelButtonText: "Cancel",
+              confirmButtonColor: "#ef4444",
+              cancelButtonColor: "#4b5563",
+            }).then((result) => {
+              if (result.isConfirmed) {
+                form.submit();
+              }
+            });
+          });
+        });
+      });
+      </script>
+      {% endblock %}
