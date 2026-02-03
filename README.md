@@ -1,6 +1,6 @@
 # ForenAlyze
 
-Plataforma web para **recogida y análisis automatizado de evidencias forenses**, desarrollada como
+Framework web para **recogida y análisis automatizado de evidencias forenses**, desarrollada como
 **Trabajo Fin de Máster (TFM)** en Seguridad Informática.
 
 ForenAlyze permite a un usuario autenticado subir ficheros sospechosos (documentos Office, PDF,
