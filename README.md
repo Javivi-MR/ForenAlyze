@@ -377,4 +377,4 @@ remote report in Hybrid Analysis.
   terms of use that must be respected separately.
 
 If you use this project as a basis for other academic work, it is
-recommended to cite the thesis document and the original repository.
+recommended to cite the thesis document and this repository.
