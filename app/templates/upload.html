@@ -36,6 +36,7 @@
       <div class="card bg-dark text-light shadow-sm border-0" style="max-width:480px;margin:auto;">
         <div class="card-body d-flex flex-column align-items-center justify-content-center" style="min-height:320px;">
           <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data" class="w-100">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div id="drop-area" class="upload-drop-area mb-3 d-flex flex-column align-items-center justify-content-center">
               <div class="upload-icon mb-3">
                 <!-- SVG de upload personalizado -->

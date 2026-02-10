@@ -2,7 +2,7 @@ from flask import Flask, render_template, request
 from sqlalchemy import text
 
 from .config import Config
-from .extensions import db, login_manager, migrate
+from .extensions import db, login_manager, migrate, csrf
 
 try:  # Carga opcional de variables desde .env si python-dotenv está instalado
     from dotenv import load_dotenv
@@ -23,6 +23,7 @@ def create_app(config_class: type[Config] = Config):
     db.init_app(app)
     login_manager.init_app(app)
     migrate.init_app(app, db)
+    csrf.init_app(app)
 
     from .auth import auth_bp
 

@@ -75,6 +75,7 @@
         </div>
         <div class="card-body">
           <form method="post" novalidate>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="form_type" value="basic">
             <div class="mb-3">
               <label for="username" class="form-label">Username</label>
@@ -141,6 +142,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content bg-dark text-light border-secondary">
       <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="form_type" value="avatar">
         <div class="modal-header border-secondary">
           <h5 class="modal-title" id="changeAvatarLabel">Change profile photo</h5>
@@ -198,6 +200,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content bg-dark text-light border-secondary">
       <form method="post" id="passwordForm" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="form_type" value="password">
         <div class="modal-header border-secondary">
           <h5 class="modal-title" id="changePasswordLabel">Change password</h5>

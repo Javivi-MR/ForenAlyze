@@ -60,6 +60,7 @@
           </div>
           {% if is_dir and can_manage_yara %}
           <form class="d-inline-flex align-items-center" method="post" action="{{ url_for('dashboard.yara_rule_upload') }}" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <label class="btn btn-sm btn-outline-secondary me-2 mb-0">
               <span>Upload new rule file</span>
               <input type="file" name="rule_file" accept=".yar,.yara,.rule" hidden onchange="this.form.submit();">
@@ -115,6 +116,7 @@
                           class="d-inline js-yara-delete-form"
                           data-rule-name="{{ r.name }}"
                         >
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <input type="hidden" name="path" value="{{ r.name }}">
                           <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                         </form>

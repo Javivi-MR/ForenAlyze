@@ -160,6 +160,7 @@
                   action="{{ url_for('dashboard.storage_delete_file', file_id=f.id) }}"
                   class="d-inline storage-delete-form"
                   data-file-name="{{ f.filename_original }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="btn btn-outline-danger btn-sm">
                     Delete
                   </button>

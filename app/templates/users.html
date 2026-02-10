@@ -36,6 +36,7 @@
         </div>
         <div class="card-body">
           <form method="post" novalidate>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="create">
             <div class="mb-3">
               <label for="username" class="form-label">Username</label>
@@ -155,6 +156,7 @@
                     <div class="modal-dialog modal-dialog-centered">
                       <div class="modal-content bg-dark text-light border-secondary">
                         <form method="post" action="{{ url_for('dashboard.admin_change_user_password', user_id=u.id) }}" novalidate>
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <div class="modal-header border-secondary">
                             <h5 class="modal-title" id="resetPasswordLabel{{ u.id }}">Change password · {{ u.username }}</h5>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>

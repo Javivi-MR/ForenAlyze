@@ -1,4 +1,15 @@
+import os
+import sys
+
 import pytest
+
+
+# Aseguramos que la raíz del proyecto (donde vive el paquete "app")
+# está en sys.path incluso cuando pytest se ejecuta desde otros
+# directorios o como módulo.
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from app.extensions import db
 
