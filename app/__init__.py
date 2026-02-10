@@ -1,21 +1,21 @@
 from flask import Flask, render_template, request
 from sqlalchemy import text
 
-from .config import Config
-from .extensions import db, login_manager, migrate, csrf
-
 try:  # Carga opcional de variables desde .env si python-dotenv está instalado
     from dotenv import load_dotenv
 except ImportError:
     load_dotenv = None
 
+# Cargamos variables de entorno desde .env lo antes posible, para que
+# Config lea ya los valores (DATABASE_URL, SECRET_KEY, etc.) al definirse.
+if load_dotenv is not None:
+    load_dotenv(override=False)
+
+from .config import Config
+from .extensions import db, login_manager, migrate, csrf
+
 
 def create_app(config_class: type[Config] = Config):
-    if load_dotenv is not None:
-        # Cargamos variables de entorno desde un fichero .env en entorno de
-        # desarrollo. Las variables ya definidas en el entorno del sistema
-        # tienen prioridad.
-        load_dotenv(override=False)
 
     app = Flask(__name__)
     app.config.from_object(config_class)

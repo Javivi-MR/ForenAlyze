@@ -6,9 +6,9 @@ services:
     container_name: forenalyze-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: forenalyze # Select your own username
-      POSTGRES_PASSWORD: forenalyze # Select your own password
-      POSTGRES_DB: forenalyze 
+      POSTGRES_USER: ${POSTGRES_USER:-forenalyze} # Select your own username
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-forenalyze} # Select your own password
+      POSTGRES_DB: ${POSTGRES_DB:-forenalyze}
     ports:
       - "5432:5432"
     volumes:
@@ -28,12 +28,16 @@ services:
     depends_on:
       - postgres
       - tika
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://forenalyze:forenalyze@postgres:5432/forenalyze
-      CLAMAV_PATH: clamscan
-      SECRET_KEY: forenalyze-secret-key
-      TIKA_ENABLED: "true"
-      TIKA_SERVER_URL: http://tika:9998
+      # Si no se define DATABASE_URL en .env, se construye a partir de las
+      # credenciales de Postgres anteriores (pensadas para desarrollo).
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://${POSTGRES_USER:-forenalyze}:${POSTGRES_PASSWORD:-forenalyze}@postgres:5432/${POSTGRES_DB:-forenalyze}}
+      CLAMAV_PATH: ${CLAMAV_PATH:-clamscan}
+      # SECRET_KEY debe venir de .env o del entorno; no se hardcodea aquí.
+      TIKA_ENABLED: ${TIKA_ENABLED:-"true"}
+      TIKA_SERVER_URL: ${TIKA_SERVER_URL:-http://tika:9998}
     ports:
       - "8000:8000"
 

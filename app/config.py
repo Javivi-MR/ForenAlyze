@@ -1,12 +1,15 @@
 import os
-import os
+import secrets
+
+
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "forenalyze-secret-key")
-    # URI de base de datos: por defecto PostgreSQL en local, configurable por env
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL",
-        "postgresql+psycopg2://forenalyze:forenalyze@localhost:5432/forenalyze",
-    )
+    # SECRET_KEY nunca debe estar hardcodeada en código. En desarrollo/test,
+    # si no se define la variable de entorno, se genera una clave aleatoria.
+    SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+
+    # URI de base de datos: se obtiene de la variable de entorno DATABASE_URL.
+    # Si no está definida, se usa una base SQLite local para desarrollo.
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or "sqlite:///instance/forenalyze_dev.db"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Cuota de almacenamiento por defecto (por usuario) en MB
