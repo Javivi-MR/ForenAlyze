@@ -1,182 +1,183 @@
 # ForenAlyze
 
-Framework web para **recogida y análisis automatizado de evidencias forenses**, desarrollada como
-**Trabajo Fin de Máster (TFM)** en Seguridad Informática.
+Web framework for **automated collection and analysis of forensic evidence**, developed as a
+**Master’s Thesis (TFM)** in Information Security.
 
-ForenAlyze permite a un usuario autenticado subir ficheros sospechosos (documentos Office, PDF,
-ejecutables, imágenes, audio, etc.), lanzar un **pipeline de análisis forense** y consultar los
-resultados desde una interfaz web cuidada, con énfasis en trazabilidad y experiencia de uso.
-
----
-
-## 1. Funcionalidades principales
-
-### 1.1. Gestión de usuarios y notificaciones
-
-- Autenticación con Flask‑Login (login/logout).
-- Usuario administrador creado mediante script (`create_admin.py`).
-- Roles diferenciados de usuario (admin / normal) con control de acceso
-  a vistas, logs, ficheros, análisis y reglas YARA.
-- Perfil con edición de datos básicos y cambio de contraseña.
-- Avatar configurable por usuario (almacenado en `app/static/avatars/`).
-- Panel de administración de usuarios (sólo admin) para crear cuentas,
-  resetear contraseñas de otros usuarios y consultar el espacio de
-  almacenamiento utilizado por cada uno.
-- Campana de notificaciones en la barra superior con contador y listado de alertas
-  recientes (malware detectado, informes listos, etc.).
-
-### 1.2. Flujo de trabajo
-
-1. El usuario inicia sesión.
-2. Sube un fichero desde la vista **Upload file**.
-3. El backend almacena la evidencia en `instance/uploads/` y crea el registro `File`.
-4. Se lanza en segundo plano el **pipeline de análisis** sobre esa evidencia.
-5. Al finalizar, se crea un registro `Analysis`, se actualiza el `final_verdict` del fichero
-	y se generan **alertas** si procede.
-6. El usuario consulta el resultado desde:
-	- El **Dashboard** (últimos análisis y KPIs).
-	- La vista **Files & analyses** (listados, filtros y acceso al informe).
-	- El **informe detallado** de cada análisis (HTML, JSON, PDF).
-
-### 1.3. Gestión de ficheros
-
-- Subida de ficheros autenticada con validación de extensión y tamaño (hasta 100 MB).
-- Soporte para ficheros ofimáticos (DOC/DOCX/DOCM, XLS/XLSX/XLSM, PPT/PPTX/PPTM),
-  ejecutables, PDF, imágenes y WAV.
-- Almacenamiento en disco con nombres internos aleatorizados y registro completo
-  en base de datos.
-- Cuota de almacenamiento configurable por usuario (`STORAGE_QUOTA_MB`) y cálculo
-  del espacio usado.
-- Sección de **Storage** donde el usuario puede ver sus ficheros, el espacio
-  ocupado y eliminar evidencias (borrando también análisis y alertas asociadas).
-
-### 1.4. Pipeline de análisis (resumen)
-
-Tras la subida de cada fichero se ejecuta en segundo plano un pipeline que:
-
-- Calcula hashes (MD5, SHA1, SHA256), tamaño y tipo MIME del fichero.
-- Extrae metadatos básicos según el tipo (Office/PDF/imágenes/audio).
-- Lanza un análisis antivirus con ClamAV cuando está disponible.
-- Escanea el fichero con reglas YARA configurables (`YARA_ENABLED` / `YARA_RULES_PATH`).
-- Integra, si se configura, consultas a VirusTotal con caché en memoria.
-- Puede extraer texto mediante Apache Tika para documentos soportados.
-- Realiza detección básica de macros en documentos Office.
-- Aplica comprobaciones sencillas de esteganografía y patrones sospechosos.
-- Analiza ficheros de audio (metadatos y espectrograma para WAV).
-- Invoca opcionalmente un hook de sandbox dinámico (mock, fichero de ejemplo o Hybrid Analysis).
-- Consolida todos los resultados en un veredicto final normalizado y en un registro `Analysis`
-  que alimenta los informes HTML/JSON/PDF.
-
-### 1.5. Alertas y dashboard (resumen)
-
-- Modelo `Alert` asociado a ficheros y análisis.
-- Generación automática de alertas según veredictos y hallazgos.
-- Dashboard con KPIs, gráficas y tabla de últimos ficheros analizados.
-- Modelo `Log` para auditoría de acciones.
+ForenAlyze allows an authenticated user to upload suspicious files (Office documents, PDFs,
+executables, images, audio, etc.), trigger a **forensic analysis pipeline**, and review the
+results from a polished web interface, with emphasis on traceability and user experience.
 
 ---
 
-## 2. Arquitectura general
+## 1. Main features
 
-- Python 3 + Flask (blueprints, contexto de aplicación).
-- Flask‑Login para autenticación.
-- Flask‑SQLAlchemy + PostgreSQL como base de datos.
-- Flask‑Migrate / Alembic para migraciones.
-- Jinja2 + Bootstrap 5 + Chart.js en el frontend.
-- Librerías forenses opcionales: `oletools`, `yara`, `mutagen`, `Pillow`,
+### 1.1. User management and notifications
+
+- Authentication with Flask‑Login (login/logout).
+- Administrator user created via script (`create_admin.py`).
+- Distinct user roles (admin / regular) with access control to views,
+  logs, files, analyses, and YARA rules.
+- Profile page with basic data editing and password change.
+- User‑configurable avatar (stored in `app/static/avatars/`).
+- User administration panel (admin only) to create accounts, reset
+  other users’ passwords, and inspect the storage space used by
+  each one.
+- Notification bell in the top bar with counter and list of recent
+  alerts (malware detected, reports ready, etc.).
+
+### 1.2. Workflow
+
+1. The user logs in.
+2. They upload a file from the **Upload file** view.
+3. The backend stores the evidence in `instance/uploads/` and creates the `File` record.
+4. The **analysis pipeline** is launched in the background on that evidence.
+5. When finished, an `Analysis` record is created, the file’s `final_verdict` is updated,
+	and **alerts** are generated if applicable.
+6. The user reviews the result from:
+	- The **Dashboard** (latest analyses and KPIs).
+	- The **Files & analyses** view (listings, filters, and report access).
+	- The **detailed report** for each analysis (HTML, JSON, PDF).
+
+### 1.3. File management
+
+- Authenticated file uploads with extension and size validation (up to 100 MB).
+- Support for office documents (DOC/DOCX/DOCM, XLS/XLSX/XLSM, PPT/PPTX/PPTM),
+  executables, PDFs, images, and WAV.
+- On‑disk storage with randomized internal filenames and full
+  registration in the database.
+- Per‑user storage quota configurable via `STORAGE_QUOTA_MB` and computation
+  of used space.
+- **Storage** section where the user can see their files, the space
+  used, and delete evidence (also removing associated analyses
+  and alerts).
+
+### 1.4. Analysis pipeline (overview)
+
+After each file upload, a background pipeline is executed that:
+
+- Computes hashes (MD5, SHA1, SHA256), size, and MIME type of the file.
+- Extracts basic metadata depending on the type (Office/PDF/images/audio).
+- Runs antivirus analysis with ClamAV when available.
+- Scans the file with configurable YARA rules (`YARA_ENABLED` / `YARA_RULES_PATH`).
+- Optionally integrates VirusTotal lookups with in‑memory cache.
+- Can extract text via Apache Tika for supported documents.
+- Performs basic macro detection in Office documents.
+- Applies simple checks for steganography and suspicious patterns.
+- Analyzes audio files (metadata and spectrogram for WAV).
+- Optionally invokes a dynamic sandbox hook (mock, sample file, or Hybrid Analysis).
+- Consolidates all results into a normalized final verdict and an `Analysis` record
+  that powers the HTML/JSON/PDF reports.
+
+### 1.5. Alerts and dashboard (overview)
+
+- `Alert` model associated with files and analyses.
+- Automatic alert generation based on verdicts and findings.
+- Dashboard with KPIs, charts, and a table of the latest analyzed files.
+- `Log` model for auditing actions.
+
+---
+
+## 2. Overall architecture
+
+- Python 3 + Flask (blueprints, application context).
+- Flask‑Login for authentication.
+- Flask‑SQLAlchemy + PostgreSQL as the database.
+- Flask‑Migrate / Alembic for migrations.
+- Jinja2 + Bootstrap 5 + Chart.js on the frontend.
+- Optional forensic libraries: `oletools`, `yara`, `mutagen`, `Pillow`,
   `numpy`, `matplotlib`, `requests`.
 
-Estructura simplificada del proyecto:
+Simplified project structure:
 
 ```text
 ForenAlyze/
-├─ run.py                 # Punto de entrada Flask / Gunicorn
-├─ create_admin.py        # Crea usuario admin (admin/admin123)
+├─ run.py                 # Flask / Gunicorn entry point
+├─ create_admin.py        # Creates admin user (admin/admin123)
 ├─ requirements.txt
 ├─ docker-compose.yml
 ├─ Dockerfile
-├─ .env.example           # Plantilla de configuración
+├─ .env.example           # Configuration template
 ├─ app/
-│  ├─ __init__.py         # create_app(), registro de blueprints
-│  ├─ config.py           # Clase Config (entorno, VT, YARA, Tika, sandbox...)
+│  ├─ __init__.py         # create_app(), blueprint registration
+│  ├─ config.py           # Config class (environment, VT, YARA, Tika, sandbox...)
 │  ├─ extensions.py       # db, login_manager, migrate
 │  ├─ models.py           # User, File, Analysis, Alert, Log, etc.
 │  ├─ analysis/
-│  │  ├─ dashboard.py     # Rutas principales (dashboard, files, logs, storage...)
-│  │  ├─ pipeline.py      # Lógica principal de análisis
+│  │  ├─ dashboard.py     # Main routes (dashboard, files, logs, storage...)
+│  │  ├─ pipeline.py      # Core analysis logic
 │  │  └─ ...
-│  ├─ auth/               # Blueprint de autenticación
-│  ├─ templates/          # Plantillas Jinja2
-│  └─ static/             # JS, CSS, avatars, espectrogramas...
+│  ├─ auth/               # Authentication blueprint
+│  ├─ templates/          # Jinja2 templates
+│  └─ static/             # JS, CSS, avatars, spectrograms...
 └─ instance/
-   └─ uploads/            # Evidencias subidas (fuera de static)
+   └─ uploads/            # Uploaded evidence (outside static)
 ```
 
 ---
 
-## 3. Puesta en marcha desde cero
+## 3. Getting started from scratch
 
-A continuación se describe cómo arrancar ForenAlyze tanto en un entorno
-**local con Python** como usando **Docker Compose**.
+This section describes how to run ForenAlyze both in a
+**local Python environment** and using **Docker Compose**.
 
-### 3.1. Prerrequisitos
+### 3.1. Prerequisites
 
-- Python 3.11 (o compatible) instalado.
+- Python 3.11 (or compatible) installed.
 - Git.
-- PostgreSQL 14+ (si vas a ejecutar sin Docker) **o** Docker + Docker Compose.
+- PostgreSQL 14+ (if you are going to run without Docker) **or** Docker + Docker Compose.
 
-En Windows se recomienda usar PowerShell.
+On Windows it is recommended to use PowerShell.
 
-### 3.2. Clonar el repositorio
+### 3.2. Clone the repository
 
 ```bash
 git clone https://github.com/Javivi-MR/ForenAlyze.git
 cd ForenAlyze
 ```
 
-### 3.3. Configuración de entorno (.env)
+### 3.3. Environment configuration (.env)
 
-1. Copia el fichero de ejemplo:
+1. Copy the example file:
 
    ```bash
-   cp .env.example .env   # En PowerShell: copy .env.example .env
+   cp .env.example .env   # In PowerShell: copy .env.example .env
    ```
 
-2. Edita `.env` y revisa al menos estas variables:
+2. Edit `.env` and review at least these variables:
 
-   - `SECRET_KEY` – cambia el valor por uno aleatorio en producción.
-   - `DATABASE_URL` – URI de conexión a PostgreSQL, por ejemplo:
+   - `SECRET_KEY` – change the value to a random one in production.
+   - `DATABASE_URL` – PostgreSQL connection URI, for example:
 
      ```text
      postgresql+psycopg2://forenalyze:forenalyze@localhost:5432/forenalyze
      ```
 
-   - `STORAGE_QUOTA_MB` – cuota por usuario en MB (por defecto 2048).
-   - `CLAMAV_PATH` – si tienes `clamscan` en el PATH, puedes dejarlo vacío.
-   - `VIRUSTOTAL_API_KEY` – si quieres activar consultas a VirusTotal.
-   - `YARA_ENABLED` / `YARA_RULES_PATH` – para activar reglas YARA.
-   - `TIKA_ENABLED`, `TIKA_SERVER_URL` – si vas a usar Apache Tika.
-   - `SANDBOX_*` – sólo si vas a probar el hook de sandbox / Hybrid Analysis.
+   - `STORAGE_QUOTA_MB` – per‑user quota in MB (default 2048).
+   - `CLAMAV_PATH` – if you have `clamscan` in the PATH, you can leave it empty.
+   - `VIRUSTOTAL_API_KEY` – if you want to enable VirusTotal queries.
+   - `YARA_ENABLED` / `YARA_RULES_PATH` – to enable YARA rules.
+   - `TIKA_ENABLED`, `TIKA_SERVER_URL` – if you are going to use Apache Tika.
+   - `SANDBOX_*` – only if you are going to test the sandbox / Hybrid Analysis hook.
 
-### 3.4. Entorno virtual y dependencias (modo local)
+### 3.4. Virtual environment and dependencies (local mode)
 
 ```bash
 python -m venv venv
-# En Linux / macOS
+# On Linux / macOS
 source venv/bin/activate
-# En Windows PowerShell
+# On Windows PowerShell
 venv\Scripts\Activate.ps1
 
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 3.5. Base de datos y migraciones
+### 3.5. Database and migrations
 
-#### 3.5.1. Crear la base de datos PostgreSQL
+#### 3.5.1. Create the PostgreSQL database
 
-Crea una base de datos vacía y un usuario que coincidan con tu `DATABASE_URL`.
-Ejemplo (psql):
+Create an empty database and a user matching your `DATABASE_URL`.
+Example (psql):
 
 ```sql
 CREATE DATABASE forenalyze;
@@ -184,9 +185,9 @@ CREATE USER forenalyze WITH PASSWORD 'forenalyze';
 GRANT ALL PRIVILEGES ON DATABASE forenalyze TO forenalyze;
 ```
 
-#### 3.5.2. Aplicar migraciones Alembic
+#### 3.5.2. Apply Alembic migrations
 
-Desde la raíz del proyecto, con el entorno virtual activado:
+From the project root, with the virtual environment activated:
 
 ```bash
 # Linux / macOS
@@ -198,54 +199,54 @@ $env:FLASK_APP = "run.py"
 flask db upgrade
 ```
 
-Esto creará todo el esquema definido en `migrations/`.
+This will create the entire schema defined in `migrations/`.
 
-### 3.6. Crear usuario administrador
+### 3.6. Create administrator user
 
-Ejecuta una vez el script `create_admin.py`:
+Run the `create_admin.py` script once:
 
 ```bash
 python create_admin.py
 ```
 
-- Si no existe, creará el usuario `admin` con contraseña `admin123`.
-- Si ya existe, mostrará un mensaje indicándolo.
+- If it does not exist, it will create the `admin` user with password `admin123`.
+- If it already exists, it will display a message indicating so.
 
-> Por motivos de seguridad, se recomienda cambiar la contraseña
-> por defecto del usuario `admin` en el primer inicio de sesión
-> utilizando la pantalla de perfil de usuario.
+> For security reasons, it is recommended to change the default
+> password for the `admin` user on the first login using the
+> user profile screen.
 
-### 3.7. Ejecutar la aplicación en local
+### 3.7. Run the application locally
 
-Con el entorno virtual activo:
+With the virtual environment active:
 
 ```bash
 python run.py
 ```
 
-Por defecto Flask arranca en `http://127.0.0.1:5000` con `debug=True`.
+By default, Flask starts on `http://127.0.0.1:5000` with `debug=True`.
 
-Accede en el navegador y entra con las credenciales `admin` / `admin123`.
+Open your browser and log in with credentials `admin` / `admin123`.
 
 ---
 
-## 4. Despliegue con Docker Compose
+## 4. Deployment with Docker Compose
 
-El repositorio incluye un `Dockerfile` y un `docker-compose.yml` para levantar
-rápidamente un entorno completo con PostgreSQL, Tika y la aplicación web.
+The repository includes a `Dockerfile` and a `docker-compose.yml` to quickly
+spin up a complete environment with PostgreSQL, Tika, and the web application.
 
-### 4.1. Servicios definidos
+### 4.1. Defined services
 
-En `docker-compose.yml` se definen:
+In `docker-compose.yml` the following services are defined:
 
-- `postgres` – Contenedor PostgreSQL 16.
-- `tika` – Contenedor `apache/tika:latest` exponiendo el puerto 9998.
-- `web` – Imagen de la aplicación ForenAlyze basada en `python:3.11-slim` con
-  ClamAV instalado y `gunicorn` escuchando en `0.0.0.0:8000`.
+- `postgres` – PostgreSQL 16 container.
+- `tika` – `apache/tika:latest` container exposing port 9998.
+- `web` – ForenAlyze application image based on `python:3.11-slim` with
+  ClamAV installed and `gunicorn` listening on `0.0.0.0:8000`.
 
-### 4.2. Variables de entorno en Docker
+### 4.2. Environment variables in Docker
 
-El servicio `web` ya establece algunas variables por defecto:
+The `web` service already sets some default variables:
 
 ```yaml
 environment:
@@ -256,30 +257,30 @@ environment:
   TIKA_SERVER_URL: http://tika:9998
 ```
 
-Puedes complementarlas añadiendo un fichero `.env` o variables adicionales
-según tus necesidades.
+You can complement them by adding a `.env` file or additional
+environment variables as needed.
 
-### 4.3. Construir e iniciar servicios
+### 4.3. Build and start services
 
-Desde la raíz del proyecto:
+From the project root:
 
 ```bash
 docker-compose up --build
 ```
 
-Esto levantará PostgreSQL, Tika y la aplicación. La primera vez deberás aplicar
-las migraciones dentro del contenedor `web`:
+This will start PostgreSQL, Tika, and the application. The first time you
+will need to apply the migrations inside the `web` container:
 
 ```bash
-# En otra terminal
+# In another terminal
 docker-compose run --rm web flask db upgrade
 ```
 
-A partir de ahí, con `docker-compose up` el esquema ya estará creado.
+After that, with `docker-compose up` the schema will already exist.
 
-La aplicación quedará accesible en `http://127.0.0.1:8000`.
+The application will be available at `http://127.0.0.1:8000`.
 
-> Para crear el usuario administrador dentro del contenedor puedes ejecutar:
+> To create the administrator user inside the container you can run:
 >
 > ```bash
 > docker-compose run --rm web python create_admin.py
@@ -287,92 +288,93 @@ La aplicación quedará accesible en `http://127.0.0.1:8000`.
 
 ---
 
-## 5. Configuración avanzada
+## 5. Advanced configuration
 
 ### 5.1. VirusTotal
 
-- Asegúrate de contar con una API key válida y respetar los límites de uso.
-- Establece `VIRUSTOTAL_API_KEY` y, opcionalmente, ajusta:
+- Make sure you have a valid API key and respect the usage limits.
+- Set `VIRUSTOTAL_API_KEY` and optionally adjust:
   - `VIRUSTOTAL_ENABLED` (`true`/`false`).
-  - `VIRUSTOTAL_CACHE_TTL_SECONDS` para la caché en memoria.
-- El informe HTML indica claramente el estado de la integración
-  (datos válidos, no configurado, rate‑limit, etc.).
+  - `VIRUSTOTAL_CACHE_TTL_SECONDS` for the in‑memory cache.
+- The HTML report clearly indicates the integration status
+  (valid data, not configured, rate‑limited, etc.).
 
-### 5.2. YARA y reglas externas
+### 5.2. YARA and external rules
 
-- Instala la librería `yara` (o `yara-python`) en el entorno.
-- Activa el módulo con:
+- Install the `yara` (or `yara-python`) library in the environment.
+- Enable the module with:
 
   ```env
   YARA_ENABLED=true
-  YARA_RULES_PATH=/ruta/a/mis/reglas
+  YARA_RULES_PATH=/path/to/my/rules
   ```
 
-- `YARA_RULES_PATH` puede apuntar a:
-  - Un único fichero de reglas (`forenalyze.yar`).
-  - Un directorio con múltiples ficheros de reglas.
-- Desde la interfaz **YARA rules** (lectura para todos los usuarios,
-  gestión completa sólo para administradores) puedes:
-  - Ver el listado actual.
-  - Subir nuevos ficheros (modo directorio).
-  - Editar un fichero desde el navegador.
-  - Eliminar ficheros individuales (modo directorio).
+- `YARA_RULES_PATH` can point to:
+  - A single rules file (`forenalyze.yar`).
+  - A directory with multiple rule files.
+- From the **YARA rules** interface (read‑only for all users,
+  full management for administrators only) you can:
+  - View the current list.
+  - Upload new files (directory mode).
+  - Edit a file directly from the browser.
+  - Delete individual files (directory mode).
 
-Para utilizar reglas externas como `Neo23x0/signature-base` se recomienda:
+To use external rules such as `Neo23x0/signature-base` it is recommended to:
 
-1. Clonar ese repositorio **fuera** de ForenAlyze (para no anidar repositorios).
-2. Apuntar `YARA_RULES_PATH` al subdirectorio adecuado (p.ej. `.../signature-base/yara`).
-3. Documentar en la memoria del TFM la procedencia y licencia de dichas reglas.
+1. Clone that repository **outside** ForenAlyze (to avoid nested repositories).
+2. Point `YARA_RULES_PATH` to the appropriate subdirectory (e.g. `.../signature-base/yara`).
+3. Document in the thesis the origin and license of those rules.
 
 ### 5.3. Apache Tika
 
-- El contenedor `tika` del `docker-compose.yml` expone el servidor en `9998`.
-- Para un despliegue sin Docker puedes arrancar Tika Server manualmente y
-  apuntar `TIKA_SERVER_URL` a la URL correspondiente.
-- `TIKA_MAX_TEXT_CHARS` controla el máximo de caracteres de texto que se guardan
-  en base de datos para cada documento (por defecto 20 000).
+- The `tika` container in `docker-compose.yml` exposes the server on port `9998`.
+- For a non‑Docker deployment, you can start Tika Server manually and
+  set `TIKA_SERVER_URL` to the corresponding URL.
+- `TIKA_MAX_TEXT_CHARS` controls the maximum number of characters stored
+  in the database for each document’s extracted text (default 20,000).
 
 ### 5.4. Sandbox / Hybrid Analysis
 
-El proyecto implementa un **hook genérico** para sandbox dinámico:
+The project implements a **generic hook** for dynamic sandboxing:
 
-- `SANDBOX_ENABLED=true` activa la integración.
-- `SANDBOX_MODE` define el modo de operación:
-  - `disabled` – apagado.
-  - `mock` – genera resultados sintéticos para la demo.
-  - `file` – lee un JSON de ejemplo desde `SANDBOX_MOCK_RESULT_PATH`.
-  - `hybrid_analysis` – integra con Hybrid Analysis / Falcon Sandbox vía API.
+- `SANDBOX_ENABLED=true` activates the integration.
+- `SANDBOX_MODE` defines the operating mode:
+  - `disabled` – off.
+  - `mock` – generates synthetic results for the demo.
+  - `file` – reads a sample JSON from `SANDBOX_MOCK_RESULT_PATH`.
+  - `hybrid_analysis` – integrates with Hybrid Analysis / Falcon Sandbox via API.
 
-Cuando `SANDBOX_MODE=hybrid_analysis` se usan además:
+When `SANDBOX_MODE=hybrid_analysis`, the following are also used:
 
 - `HYBRID_ANALYSIS_API_KEY`
 - `HYBRID_ANALYSIS_API_URL`
 - `HYBRID_ANALYSIS_PUBLIC_URL`
 - `HYBRID_ANALYSIS_ENV_ID`
 
-En el informe HTML aparece una tarjeta **Sandbox / dynamic analysis** con el
-`score`, `verdict`, familia, tags y, cuando existe, un botón para abrir el
-informe remoto en Hybrid Analysis.
+In the HTML report, a **Sandbox / dynamic analysis** card is displayed with
+`score`, `verdict`, family, tags, and, when available, a button to open the
+remote report in Hybrid Analysis.
 
 ---
 
-## 6. Seguridad y privacidad
+## 6. Security and privacy
 
-- El proyecto está orientado a un contexto **académico / de laboratorio**.
-- No sustituye herramientas forenses certificadas ni productos comerciales.
-- La responsabilidad sobre el uso de servicios externos (VirusTotal, Hybrid
-  Analysis, etc.) y el tratamiento de las evidencias recae en el operador.
-- No se recomienda subir evidencias con datos personales o sensibles a
-  servicios externos sin haber revisado cuidadosamente sus políticas.
+- The project is oriented to an **academic / lab** context.
+- It does not replace certified forensic tools or commercial products.
+- Responsibility for using external services (VirusTotal, Hybrid
+  Analysis, etc.) and handling evidence lies with the operator.
+- Uploading evidence containing personal or sensitive data to
+  external services is not recommended without carefully reviewing
+  their policies.
 
 ---
 
-## 7. Licencia y créditos
+## 7. License and credits
 
-- El código de ForenAlyze se publica con la licencia indicada en `LICENSE`.
-- Las reglas YARA, firmas AV y servicios externos (VirusTotal, Hybrid Analysis,
-  conjuntos de reglas públicos como `signature-base`, etc.) tienen sus propias
-  licencias y términos de uso que deben respetarse por separado.
+- ForenAlyze’s source code is published under the license indicated in `LICENSE`.
+- YARA rules, AV signatures, and external services (VirusTotal, Hybrid Analysis,
+  public rule sets such as `signature-base`, etc.) have their own licenses and
+  terms of use that must be respected separately.
 
-Si utilizas este proyecto como base para otros trabajos académicos, se
-recomienda citar la memoria del TFM y el repositorio original.
+If you use this project as a basis for other academic work, it is
+recommended to cite the thesis document and the original repository.
