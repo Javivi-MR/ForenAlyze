@@ -22,3 +22,6 @@ jobs:
           args: >
             -Dsonar.projectKey=Javivi-MR_ForenAlyze
             -Dsonar.organization=javivi-mr
+            -Dsonar.c.file.suffixes=-
+            -Dsonar.cpp.file.suffixes=-
+            -Dsonar.objc.file.suffixes=-
