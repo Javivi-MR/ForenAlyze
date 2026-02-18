@@ -403,6 +403,155 @@ def admin_change_user_password(user_id: int):
 	return redirect(url_for("dashboard.manage_users"))
 
 
+@dashboard_bp.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def admin_delete_user(user_id: int):
+	"""Allow admins to delete non-admin users and all their data.
+
+	This removes the user's files, analyses, alerts, logs and associated
+	stored files from disk. Admins cannot delete themselves or other
+	admin accounts.
+	"""
+
+	target = User.query.get_or_404(user_id)
+
+	# Safety checks: no self-deletion here, no deleting other admins
+	if target.id == current_user.id:
+		flash("You cannot delete your own account from this page.", "error")
+		return redirect(url_for("dashboard.manage_users"))
+
+	if getattr(target, "is_admin", False):
+		flash("You cannot delete another admin user.", "error")
+		return redirect(url_for("dashboard.manage_users"))
+
+	username = target.username or f"user-{target.id}"
+
+	# Delete all files owned by the user, with their analyses/alerts and
+	# physical files on disk.
+	user_files = File.query.filter_by(user_id=target.id).all()
+	total_freed_bytes = 0
+	files_deleted = 0
+
+	for file_obj in user_files:
+		size_bytes = file_obj.size or 0
+		total_freed_bytes += size_bytes
+		files_deleted += 1
+		path = file_obj.storage_path
+
+		# Delete analyses for this file and their alerts
+		analyses = Analysis.query.filter_by(file_id=file_obj.id).all()
+		for analysis in analyses:
+			Alert.query.filter_by(analysis_id=analysis.id).delete(synchronize_session=False)
+
+			log_event(
+				action="admin_user_delete_analysis",
+				resource="dashboard.admin_delete_user",
+				status="success",
+				message=(
+					f"Analysis {analysis.id} deleted as part of admin "
+					f"cleanup for user '{username}'."
+				),
+				extra={
+					"file_id": file_obj.id,
+					"analysis_id": analysis.id,
+					"target_user_id": target.id,
+				},
+			)
+
+			db.session.delete(analysis)
+
+		# Alerts directly associated to the file
+		Alert.query.filter_by(file_id=file_obj.id).delete(synchronize_session=False)
+
+		# Remove physical file from disk (best-effort)
+		try:
+			if path and os.path.exists(path):
+				os.remove(path)
+		except OSError:
+			pass
+
+		# Finally remove DB record for file
+		db.session.delete(file_obj)
+
+	# Extra analyses owned by this user that are not tied to the
+	# user's own files (defensive cleanup).
+	extra_analyses = (
+		Analysis.query.filter(Analysis.user_id == target.id)
+		.outerjoin(File, Analysis.file_id == File.id)
+		.filter((File.id.is_(None)) | (File.user_id != target.id))
+		.all()
+	)
+	for analysis in extra_analyses:
+		Alert.query.filter_by(analysis_id=analysis.id).delete(synchronize_session=False)
+		log_event(
+			action="admin_user_delete_analysis_orphan",
+			resource="dashboard.admin_delete_user",
+			status="success",
+			message=(
+				f"Orphan analysis {analysis.id} deleted as part of admin "
+				f"cleanup for user '{username}'."
+			),
+			extra={
+				"analysis_id": analysis.id,
+				"target_user_id": target.id,
+			},
+		)
+		db.session.delete(analysis)
+
+	# Alerts and logs directly associated to the user
+	Alert.query.filter_by(user_id=target.id).delete(synchronize_session=False)
+	Log.query.filter_by(user_id=target.id).delete(synchronize_session=False)
+
+	# Best-effort removal of avatar image if stored under static/avatars
+	image_url = getattr(target, "image_url", None)
+	if image_url:
+		try:
+			marker = "/static/"
+			if marker in image_url:
+				rel_path = image_url.split(marker, 1)[1]
+				fs_path = os.path.join(current_app.root_path, "static", rel_path.replace("/", os.sep))
+				if os.path.exists(fs_path):
+					os.remove(fs_path)
+		except OSError:
+			pass
+
+	# Finally, delete the user account itself
+	db.session.delete(target)
+
+	freed_human = _human_size(total_freed_bytes)
+	log_event(
+		action="admin_user_delete",
+		message=f"Admin deleted user '{username}' and related data.",
+		status="success",
+		resource="dashboard.admin_delete_user",
+		extra={
+			"target_user_id": user_id,
+			"target_username": username,
+			"files_deleted": files_deleted,
+			"freed_bytes": int(total_freed_bytes),
+		},
+	)
+
+	try:
+		db.session.commit()
+	except Exception:
+		db.session.rollback()
+		flash("An error occurred while deleting the user.", "error")
+		return redirect(url_for("dashboard.manage_users"))
+
+	if files_deleted:
+		flash(
+			f"User '{username}' and their data were deleted. "
+			f"Freed {freed_human} of storage.",
+			"success",
+		)
+	else:
+		flash(f"User '{username}' was deleted.", "success")
+
+	return redirect(url_for("dashboard.manage_users"))
+
+
 def build_dashboard_data(user: User | None):
 	"""Calcula KPIs y datasets del dashboard para el usuario (o global)."""
 

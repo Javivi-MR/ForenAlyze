@@ -273,6 +273,113 @@ def test_storage_view_shows_only_user_files(app, client):
     assert "other_file.docx" not in html
 
 
+def test_admin_can_delete_user_and_related_data(app, client, tmp_path):
+    with app.app_context():
+        admin = _create_admin_user()
+        user = _create_user("to_delete")
+
+        # Create a real file on disk to verify physical deletion
+        upload_dir = tmp_path / "uploads"
+        upload_dir.mkdir()
+        file_path = upload_dir / "sample.bin"
+        file_path.write_bytes(b"0123456789")
+        size_bytes = file_path.stat().st_size
+
+        file_obj = File(
+            user_id=user.id,
+            filename_original="sample.bin",
+            filename_stored="sample_1.bin",
+            storage_path=str(file_path),
+            size=size_bytes,
+            file_type="BIN",
+            mime_type="application/octet-stream",
+        )
+        db.session.add(file_obj)
+        db.session.flush()
+
+        analysis = Analysis(
+            file_id=file_obj.id,
+            user_id=user.id,
+            sha256="deadbeef",
+            final_verdict="clean",
+        )
+        db.session.add(analysis)
+        db.session.flush()
+
+        alert = Alert(
+            user_id=user.id,
+            file_id=file_obj.id,
+            analysis_id=analysis.id,
+            title="Report ready",
+            severity="info",
+            description="Test alert",
+            is_read=False,
+        )
+        log = Log(
+            user_id=user.id,
+            username=user.username,
+            action="upload",
+            resource="dashboard.upload",
+            status="success",
+            message="User upload log",
+        )
+        db.session.add_all([alert, log])
+        db.session.commit()
+
+        user_id = user.id
+        file_id = file_obj.id
+        analysis_id = analysis.id
+
+    assert file_path.exists()
+
+    # Login as admin and trigger deletion
+    resp = _login(client, "admin", "admin1234")
+    assert resp.status_code == 200
+
+    resp = client.post(f"/admin/users/{user_id}/delete", follow_redirects=True)
+    assert resp.status_code == 200
+
+    with app.app_context():
+        assert User.query.get(user_id) is None
+        assert File.query.filter_by(user_id=user_id).count() == 0
+        assert Analysis.query.filter_by(user_id=user_id).count() == 0
+        assert (
+            Alert.query.filter(
+                (Alert.user_id == user_id)
+                | (Alert.file_id == file_id)
+                | (Alert.analysis_id == analysis_id)
+            ).count()
+            == 0
+        )
+        assert Log.query.filter_by(user_id=user_id).count() == 0
+
+    # Physical file should be gone
+    assert not file_path.exists()
+
+
+def test_admin_cannot_delete_self_or_other_admin(app, client):
+    with app.app_context():
+        admin = _create_admin_user()
+        other_admin = _create_user("other_admin", is_admin=True)
+        admin_id = admin.id
+        other_admin_id = other_admin.id
+
+    resp = _login(client, "admin", "admin1234")
+    assert resp.status_code == 200
+
+    # Attempt to delete self
+    resp = client.post(f"/admin/users/{admin_id}/delete", follow_redirects=True)
+    assert resp.status_code == 200
+
+    # Attempt to delete another admin
+    resp = client.post(f"/admin/users/{other_admin_id}/delete", follow_redirects=True)
+    assert resp.status_code == 200
+
+    with app.app_context():
+        assert User.query.get(admin_id) is not None
+        assert User.query.get(other_admin_id) is not None
+
+
 def test_analysis_report_owner_marks_alerts_as_read(app, client):
     with app.app_context():
         owner = _create_user("alice")
