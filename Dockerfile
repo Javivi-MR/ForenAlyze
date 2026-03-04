@@ -30,4 +30,4 @@ ENV CLAMAV_PATH=clamscan \
 # Al iniciar el contenedor:
 #   1) ejecuta create_admin.py (crea tablas y usuario admin si faltan)
 #   2) arranca la app con gunicorn
-CMD ["sh", "-c", "python create_admin.py && gunicorn --bind 0.0.0.0:8000 run:app"]
+CMD ["sh", "-c", "python create_admin.py && gunicorn --bind 0.0.0.0:8000 --workers ${FLASK_WORKERS:-4} run:app"]
