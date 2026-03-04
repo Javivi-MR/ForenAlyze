@@ -1355,7 +1355,7 @@ def _run_analysis_background(app, file_id: int, full_path: str, mime_type: str, 
 			)
 
 			db.session.commit()
-		except Exception as exc:  # pragma: no cover - environment/thread errors
+		except Exception as exc:
 			current_app.logger.exception("Error in background analysis: %s", exc)
 			try:
 				db.session.rollback()
