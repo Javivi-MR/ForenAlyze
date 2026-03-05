@@ -2127,7 +2127,14 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
     mime_type = _detect_mime(path, mime_hint=mime_hint)
 
     clam = _run_clamav(path)
-    yara_matches = _run_yara(path)
+    yara_matches_raw = _run_yara(path)
+    # Filtramos entradas que sólo contienen información de error para que
+    # no se contabilicen como coincidencias reales ni afecten al veredicto.
+    yara_matches = [
+        m
+        for m in yara_matches_raw
+        if not (isinstance(m, dict) and m.get("error"))
+    ]
     macro = _detect_macros(path)
     stego_status, stego_info = _analyze_steganography(path, mime_type)
 
