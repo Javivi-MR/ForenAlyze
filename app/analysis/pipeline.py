@@ -2097,7 +2097,13 @@ def _extract_document_text_via_tika(path: Path, mime_type: str) -> Dict[str, Any
 def _decide_verdict(
     clam: Dict[str, Any], yara_matches: List[Dict[str, Any]], macro: str, stego: str
 ) -> str:
-    """Calcula veredicto global en función de señales individuales."""
+    """Calcula veredicto base en función de señales locales.
+
+    Aquí sólo se tienen en cuenta motores que no dependen de
+    servicios externos (ClamAV local, YARA, macros y esteganografía).
+    Señales remotas como VirusTotal o sandbox se aplican como
+    ajuste posterior para no acoplar demasiado esta función.
+    """
 
     if clam.get("status") == "infected":
         return "malicious"
@@ -2112,6 +2118,65 @@ def _decide_verdict(
         return "clean"
 
     return "suspicious"
+
+
+def _adjust_verdict_with_external(
+    verdict: str,
+    vt_result: Dict[str, Any] | None,
+    sandbox_score: float | None,
+) -> str:
+    """Ajusta el veredicto base usando VirusTotal y sandbox.
+
+    - Nunca rebaja un veredicto existente (sólo eleva de clean/suspicious
+      a malicious cuando hay señales fuertes externas).
+    - Usa estadísticas agregadas de VirusTotal y la puntuación numérica
+      de la sandbox (por ejemplo, Hybrid Analysis).
+    """
+
+    # Si ya es "critical" o "malicious" no tocamos nada.
+    if verdict in {"critical", "malicious"}:
+        return verdict
+
+    external_malicious = False
+    external_suspicious = False
+
+    # 1) VirusTotal: usamos las estadísticas agregadas de motores.
+    if isinstance(vt_result, dict) and vt_result.get("status") in {"ok", "cached"}:
+        stats = vt_result.get("stats") or {}
+        try:
+            malicious = int(stats.get("malicious") or 0)
+            suspicious = int(stats.get("suspicious") or 0)
+            undetected = int(stats.get("undetected") or 0)
+        except Exception:
+            malicious = suspicious = undetected = 0
+
+        total = malicious + suspicious + undetected
+        detections = malicious + suspicious
+
+        if total > 0 and detections > 0:
+            ratio = detections / float(total)
+            # Umbral fuerte: muchos motores y ratio alto
+            if detections >= 10 and ratio >= 0.5:
+                external_malicious = True
+            # Umbral más laxo para marcar como sospechoso cuando
+            # el veredicto base era "clean".
+            elif detections >= 3 and ratio >= 0.2:
+                external_suspicious = True
+
+    # 2) Sandbox dinámica: puntuaciones altas indican comportamiento malicioso.
+    if sandbox_score is not None:
+        if sandbox_score >= 90.0:
+            external_malicious = True
+        elif sandbox_score >= 70.0:
+            external_suspicious = True
+
+    if external_malicious:
+        return "malicious"
+
+    if external_suspicious and verdict == "clean":
+        return "suspicious"
+
+    return verdict
 
 
 def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None) -> Dict[str, Any]:
@@ -2206,7 +2271,10 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
 
     # VirusTotal: trabajamos sólo con el hash para no subir archivos.
     vt_result = _run_virustotal(hashes["sha256"]) if hashes.get("sha256") else {"status": "no_hash"}
+
+    # Veredicto base (motores locales) + ajuste con fuentes externas.
     verdict = _decide_verdict(clam, yara_matches, macro, stego_status)
+    verdict = _adjust_verdict_with_external(verdict, vt_result, sandbox_score)
 
     summary_parts = [
         f"Veredicto: {verdict}",
