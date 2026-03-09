@@ -9,6 +9,19 @@ results from a polished web interface, with emphasis on traceability and user ex
 
 ---
 
+## Online demo (Replit)
+
+To make evaluation easier, a public demo instance is available on Replit:\
+https://foren-alyze--javivimol.replit.app/
+
+This runs on a free tier with limited CPU, memory, and storage, so it is recommended to
+use small test samples (for example, the files under `samples/`) and avoid large batch
+uploads or very heavy analyses.
+
+If you would like access to the demo (test account or dedicated user), please contact me via email or LinkedIn.
+
+---
+
 ## 1. Main features
 
 ### 1.1. User management and notifications
