@@ -2114,7 +2114,10 @@ def _decide_verdict(
     if macro == "yes" or stego in {"possible", "yes"} or yara_matches:
         return "suspicious"
 
-    if clam.get("status") in {"clean", "not_available"} and not yara_matches:
+    # If there are no local detections and ClamAV is clean or effectively
+    # unavailable/unknown, consider the file clean at this stage. External
+    # sources (VirusTotal, sandbox) can still upgrade the verdict later.
+    if clam.get("status") in {"clean", "not_available", "unknown", None} and not yara_matches:
         return "clean"
 
     return "suspicious"
