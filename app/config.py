@@ -7,6 +7,26 @@ class Config:
     # si no se define la variable de entorno, se genera una clave aleatoria.
     SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 
+    # Ajustes de cookies de sesión (Flask) y "remember me" (Flask-Login)
+    # En producción se recomienda activar siempre Secure + HttpOnly y al
+    # menos SameSite=Lax. Se controlan mediante variables de entorno para
+    # no romper entornos de desarrollo que usen HTTP sin TLS.
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
+    SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+    REMEMBER_COOKIE_HTTPONLY = True
+    REMEMBER_COOKIE_SAMESITE = os.environ.get("REMEMBER_COOKIE_SAMESITE", "Lax")
+    REMEMBER_COOKIE_SECURE = os.environ.get("REMEMBER_COOKIE_SECURE", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
     # URI de base de datos: se obtiene de la variable de entorno DATABASE_URL.
     # Si no está definida, se usa una base SQLite local para desarrollo.
     SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or "sqlite:///instance/forenalyze_dev.db"
