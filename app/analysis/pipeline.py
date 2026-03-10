@@ -2277,16 +2277,36 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
     verdict = _adjust_verdict_with_external(verdict, vt_result, sandbox_score)
 
     summary_parts = [
-        f"Veredicto: {verdict}",
+        f"Verdict: {verdict}",
         f"ClamAV: {clam.get('status')}",
-        f"YARA: {len(yara_matches)} coincidencia(s)",
+        f"YARA matches: {len(yara_matches)}",
     ]
     if macro == "yes":
-        summary_parts.append("Macros sospechosas detectadas")
+        summary_parts.append("Suspicious macros detected")
     if stego_status in {"possible", "yes"}:
-        summary_parts.append("Indicadores de esteganografía detectados")
+        summary_parts.append("Steganography indicators detected")
     if sandbox_score is not None:
         summary_parts.append(f"Sandbox score: {sandbox_score}")
+
+    # Short VirusTotal summary for the analysis report
+    if isinstance(vt_result, dict):
+        vt_status = vt_result.get("status")
+        stats = vt_result.get("stats") or {}
+        try:
+            malicious = int(stats.get("malicious") or 0)
+            suspicious = int(stats.get("suspicious") or 0)
+            harmless = int(stats.get("harmless") or 0)
+            undetected = int(stats.get("undetected") or 0)
+        except Exception:
+            malicious = suspicious = harmless = undetected = 0
+
+        total_engines = malicious + suspicious + harmless + undetected
+        detections = malicious + suspicious
+
+        if vt_status in {"ok", "cached"} and total_engines > 0:
+            summary_parts.append(f"VirusTotal: {detections}/{total_engines} detections")
+        elif vt_status and vt_status not in {"no_hash", "disabled", "not_configured"}:
+            summary_parts.append(f"VirusTotal status: {vt_status}")
 
     cfg = current_app.config if current_app else {}
     engine_version = str(cfg.get("FORENALYZE_ENGINE_VERSION", "1.0"))

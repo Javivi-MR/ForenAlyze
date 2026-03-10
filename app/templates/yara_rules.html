@@ -56,7 +56,7 @@
           <div>
             <span class="fw-semibold">YARA rules</span>
             <div class="small text-muted">Current rules used by the analysis engine</div>
-            <div class="small text-muted">ES: Aquí puedes ver las reglas YARA en uso.{% if can_manage_yara %} Como administrador también puedes añadir, editar o borrar ficheros de reglas.{% else %} Los cambios en las reglas sólo pueden realizarlos usuarios administrador.{% endif %}</div>
+            <div class="small text-muted">Here you can see the YARA rules currently in use.{% if can_manage_yara %} As an administrator you can also add, edit or delete rule files.{% else %} Only administrator users are allowed to modify the rules.{% endif %}</div>
           </div>
           {% if is_dir and can_manage_yara %}
           <form class="d-inline-flex align-items-center" method="post" action="{{ url_for('dashboard.yara_rule_upload') }}" enctype="multipart/form-data">

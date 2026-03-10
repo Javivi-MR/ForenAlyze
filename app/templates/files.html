@@ -110,18 +110,18 @@
                   data-bs-target="#fileMetaModal"
                   data-filename="{{ f.filename_original }}"
                   data-meta='{{ {
-                    "Nombre original": f.filename_original,
-                    "Nombre almacenado": f.filename_stored,
-                    "Tipo": f.file_type or f.mime_type,
-                    "Tamaño": f.size_human,
+                    "Original name": f.filename_original,
+                    "Stored name": f.filename_stored,
+                    "Type": f.file_type or f.mime_type,
+                    "Size": f.size_human,
                     "MIME": f.mime_type,
                     "SHA256": f.sha256,
                     "MD5": f.md5,
                     "SHA1": f.sha1,
-                    "Veredicto": f.final_verdict,
-                    "Usuario": f.user_username if f.user_username is defined else "N/D",
-                    "Subido": (f.upload_date|string)[:19] if f.upload_date else '',
-                    "Ruta almacenamiento": f.storage_path
+                    "Verdict": f.final_verdict,
+                    "User": f.user_username if f.user_username is defined else "N/D",
+                    "Uploaded": (f.upload_date|string)[:19] if f.upload_date else '',
+                    "Storage path": f.storage_path
                   } | tojson }}'
                 >
                   ℹ
