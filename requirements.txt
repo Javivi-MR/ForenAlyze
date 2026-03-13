@@ -36,3 +36,6 @@ alembic>=1.13.0
 
 # Herramientas de testing
 pytest>=7.4.0
+
+# Pruebas de rendimiento (Locust)
+locust>=2.20.0
