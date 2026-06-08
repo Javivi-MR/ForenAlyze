@@ -37,7 +37,7 @@ DEFAULT_MANIFEST = REPO_ROOT / "samples" / "evaluation_manifest.csv"
 DEFAULT_OUTPUT = REPO_ROOT / "evaluation_dataset" / "results.csv"
 DEFAULT_REPORTS_JSON = REPO_ROOT / "evaluation_dataset" / "reports_json"
 DEFAULT_REPORTS_PDF = REPO_ROOT / "evaluation_dataset" / "reports_pdf"
-DEFAULT_EXPECTED_COUNT = 20
+DEFAULT_EXPECTED_COUNT = 19
 
 ALLOWED_GROUND_TRUTH_LABELS = {
     "clean",
