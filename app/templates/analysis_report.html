@@ -258,29 +258,63 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
             <div class="col-md-6">
               <h6 class="small text-muted text-uppercase">YARA rules</h6>
+              {% set yara_info = additional_meta.get('yara') if additional_meta is mapping else None %}
+
+              {% if yara_info and (yara_info.rules_files_skipped is not none) and (yara_info.rules_files_skipped|int > 0) %}
+                <div class="small text-warning mb-2">
+                  Some YARA rule files were skipped due to compilation errors (skipped: {{ yara_info.rules_files_skipped }}).
+                </div>
+              {% endif %}
+
+              {% if yara_info and yara_info.status and yara_info.status != 'ok' %}
+                <div class="small text-muted mb-2">
+                  <div>
+                    <span class="text-muted">Status:</span>
+                    <span class="fw-semibold">{{ yara_info.status }}</span>
+                  </div>
+                  {% if yara_info.rules_path %}
+                  <div>
+                    <span class="text-muted">Rules path:</span>
+                    <span class="fw-semibold">{{ yara_info.rules_path }}</span>
+                  </div>
+                  {% endif %}
+                  {% if yara_info.error %}
+                  <div class="text-warning">{{ yara_info.error }}</div>
+                  {% endif %}
+                </div>
+              {% endif %}
+
               {% if yara_matches and yara_matches|length > 0 %}
                 <ul class="list-unstyled small mb-0" style="max-height: 220px; overflow:auto;">
                   {% for m in yara_matches %}
                   <li class="mb-2">
-                    <div class="fw-semibold">{{ m.rule or 'Rule' }}</div>
-                    <div class="text-muted">Namespace: {{ m.namespace or 'N/A' }}</div>
-                    {% if m.tags %}
-                    <div class="text-muted">Tags:
-                      {% for tag in m.tags %}
-                        <span class="badge bg-secondary me-1">{{ tag }}</span>
-                      {% endfor %}
-                    </div>
-                    {% endif %}
-                    {% if m.meta %}
-                    <div class="text-muted">Meta:
-                      <code class="small">{{ m.meta }}</code>
-                    </div>
+                    {% if m.error %}
+                      <div class="text-warning">{{ m.error }}</div>
+                    {% else %}
+                      <div class="fw-semibold">{{ m.rule or 'Rule' }}</div>
+                      <div class="text-muted">Namespace: {{ m.namespace or 'N/A' }}</div>
+                      {% if m.tags %}
+                      <div class="text-muted">Tags:
+                        {% for tag in m.tags %}
+                          <span class="badge bg-secondary me-1">{{ tag }}</span>
+                        {% endfor %}
+                      </div>
+                      {% endif %}
+                      {% if m.meta %}
+                      <div class="text-muted">Meta:
+                        <code class="small">{{ m.meta }}</code>
+                      </div>
+                      {% endif %}
                     {% endif %}
                   </li>
                   {% endfor %}
                 </ul>
               {% else %}
-                <p class="text-muted mb-0">No YARA matches have been recorded.</p>
+                {% if yara_info and yara_info.status and yara_info.status != 'ok' %}
+                  <p class="text-muted mb-0">YARA matches were not produced due to the engine/configuration status above.</p>
+                {% else %}
+                  <p class="text-muted mb-0">No YARA matches have been recorded.</p>
+                {% endif %}
               {% endif %}
             </div>
           </div>

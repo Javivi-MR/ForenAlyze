@@ -30,6 +30,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 from flask import current_app
 
@@ -78,6 +79,8 @@ except Exception:  # pragma: no cover - dependencias opcionales para espectrogra
 class YaraConfig:
     enabled: bool
     rules_path: Optional[Path]
+    status: str
+    error: Optional[str] = None
 
 
 def _run_sandbox(path: Path, mime_type: str) -> Dict[str, Any] | None:
@@ -503,22 +506,42 @@ def _load_yara_config() -> YaraConfig:
     """
 
     cfg = current_app.config if current_app else {}
-    enabled = bool(cfg.get("YARA_ENABLED", False))
+    enabled_flag = bool(cfg.get("YARA_ENABLED", False))
     rules_path_cfg = cfg.get("YARA_RULES_PATH")
-    if not yara or not enabled or not rules_path_cfg:
-        return YaraConfig(enabled=False, rules_path=None)
+
+    if yara is None:
+        return YaraConfig(enabled=False, rules_path=None, status="not_available", error="yara-python engine is not available")
+
+    if not enabled_flag:
+        return YaraConfig(enabled=False, rules_path=None, status="disabled")
+
+    if not rules_path_cfg:
+        return YaraConfig(enabled=False, rules_path=None, status="not_configured", error="YARA_RULES_PATH is not set")
 
     rules_path = Path(rules_path_cfg)
     if not rules_path.exists():
-        return YaraConfig(enabled=False, rules_path=None)
+        return YaraConfig(
+            enabled=False,
+            rules_path=rules_path,
+            status="path_not_found",
+            error=f"YARA rules path does not exist: {rules_path}",
+        )
 
-    return YaraConfig(enabled=True, rules_path=rules_path)
+    return YaraConfig(enabled=True, rules_path=rules_path, status="ok")
 
 
-def _run_yara(path: Path) -> List[Dict[str, Any]]:
+def _run_yara(path: Path) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
     conf = _load_yara_config()
+    engine_info: Dict[str, Any] = {
+        "engine": "yara",
+        "status": conf.status,
+        "rules_path": str(conf.rules_path) if conf.rules_path else None,
+    }
+    if conf.error:
+        engine_info["error"] = conf.error
+
     if not conf.enabled or not conf.rules_path:
-        return []
+        return [], engine_info
 
     try:
         # Si YARA_RULES_PATH apunta a un directorio, recopilamos todas las
@@ -529,18 +552,107 @@ def _run_yara(path: Path) -> List[Dict[str, Any]]:
             for ext in (".yar", ".yara", ".rule"):
                 rule_files.extend(conf.rules_path.rglob(f"*{ext}"))
             if not rule_files:
-                return []
-            filepaths: dict[str, str] = {}
-            for idx, rf in enumerate(sorted(rule_files)):
-                namespace = f"ns_{idx}_{rf.stem}"
-                filepaths[namespace] = str(rf)
-            rules = yara.compile(filepaths=filepaths)  # type: ignore[arg-type]
+                engine_info.update({"status": "no_rules_found", "rules_files": 0})
+                return [], engine_info
+
+            sorted_files = sorted(rule_files)
+            engine_info["rules_files_total"] = len(sorted_files)
+
+            def _extract_error_file(msg: str) -> str | None:
+                # Typical yara-python error format:
+                #   <path>(<line>): <description>
+                # We try to extract the file path part in a best-effort way.
+                try:
+                    before_paren = msg.split("(", 1)[0].strip()
+                except Exception:
+                    return None
+                if not before_paren:
+                    return None
+                # Only accept likely rule files
+                lower = before_paren.lower()
+                if not (lower.endswith(".yar") or lower.endswith(".yara") or lower.endswith(".rule")):
+                    return None
+                return before_paren
+
+            # Build initial namespace->filepath map.
+            filepaths: dict[str, str] = {
+                f"ns_{idx}_{rf.stem}": str(rf)
+                for idx, rf in enumerate(sorted_files)
+            }
+
+            skipped: list[dict[str, str]] = []
+            # Some public rulesets may contain a few broken rules for a given
+            # libyara build / environment. Instead of failing the whole scan,
+            # iteratively remove offending files and compile the rest.
+            max_skips = 50
+            while True:
+                if not filepaths:
+                    engine_info.update(
+                        {
+                            "status": "error",
+                            "error": "No YARA rule files could be compiled.",
+                            "rules_files_loaded": 0,
+                            "rules_files_skipped": len(skipped),
+                            "skipped": skipped[:20],
+                        }
+                    )
+                    return [], engine_info
+
+                try:
+                    rules = yara.compile(filepaths=filepaths)  # type: ignore[arg-type]
+                    break
+                except Exception as exc_compile:
+                    msg = str(exc_compile)
+                    bad_file = _extract_error_file(msg)
+                    if not bad_file or len(skipped) >= max_skips:
+                        engine_info.update(
+                            {
+                                "status": "error",
+                                "error": f"error YARA: {msg}",
+                                "rules_files_loaded": len(filepaths),
+                                "rules_files_skipped": len(skipped),
+                                "skipped": skipped[:20],
+                            }
+                        )
+                        return [], engine_info
+
+                    # Remove all entries pointing to that file path.
+                    removed_any = False
+                    for ns, fp in list(filepaths.items()):
+                        if fp == bad_file:
+                            filepaths.pop(ns, None)
+                            removed_any = True
+                    if removed_any:
+                        skipped.append({"file": bad_file, "error": msg})
+                    else:
+                        # If we couldn't match it exactly, stop to avoid a loop.
+                        engine_info.update(
+                            {
+                                "status": "error",
+                                "error": f"error YARA: {msg}",
+                                "rules_files_loaded": len(filepaths),
+                                "rules_files_skipped": len(skipped),
+                                "skipped": skipped[:20],
+                            }
+                        )
+                        return [], engine_info
+
+            engine_info.update(
+                {
+                    "rules_files_loaded": len(filepaths),
+                    "rules_files_skipped": len(skipped),
+                }
+            )
+            if skipped:
+                engine_info["skipped"] = skipped[:20]
         else:
             rules = yara.compile(filepath=str(conf.rules_path))  # type: ignore[arg-type]
+            engine_info["rules_files"] = 1
 
         matches = rules.match(str(path))
     except Exception as exc:  # pragma: no cover - errores de reglas
-        return [{"error": f"error YARA: {exc}"}]
+        engine_info.update({"status": "error", "error": f"error YARA: {exc}"})
+        return [], engine_info
 
     results: List[Dict[str, Any]] = []
     for m in matches:
@@ -552,7 +664,7 @@ def _run_yara(path: Path) -> List[Dict[str, Any]]:
                 "meta": dict(m.meta),
             }
         )
-    return results
+    return results, engine_info
 
 
 def _run_virustotal(sha256: str) -> Dict[str, Any]:
@@ -1960,6 +2072,14 @@ def _extract_document_text_via_tika(path: Path, mime_type: str) -> Dict[str, Any
     text_url = base_url + "/tika"
     meta_url = base_url + "/meta"
 
+    parsed_base = urlparse(base_url)
+    should_retry_localhost = parsed_base.hostname == "tika"
+    fallback_base_url: str | None = None
+    if should_retry_localhost:
+        port = parsed_base.port or 9998
+        scheme = parsed_base.scheme or "http"
+        fallback_base_url = f"{scheme}://localhost:{port}"
+
     text_content: str | None = None
     meta_data: dict[str, Any] | None = None
     errors: list[str] = []
@@ -1978,7 +2098,23 @@ def _extract_document_text_via_tika(path: Path, mime_type: str) -> Dict[str, Any
         else:
             errors.append(f"Tika text HTTP {resp.status_code}")
     except Exception as exc:  # pragma: no cover - errores de red/API
-        errors.append(f"Tika text error: {exc}")
+        if fallback_base_url:
+            try:
+                with path.open("rb") as fh:  # pragma: no cover
+                    resp = requests.put(
+                        fallback_base_url.rstrip("/") + "/tika",
+                        data=fh,
+                        headers={"Accept": "text/plain"},
+                        timeout=timeout,
+                    )
+                if resp.ok:
+                    text_content = (resp.text or "").strip()
+                else:
+                    errors.append(f"Tika text HTTP {resp.status_code}")
+            except Exception as exc2:  # pragma: no cover
+                errors.append(f"Tika text error: {exc2}")
+        else:
+            errors.append(f"Tika text error: {exc}")
 
     # Segunda petición: metadatos en JSON
     try:
@@ -1999,7 +2135,28 @@ def _extract_document_text_via_tika(path: Path, mime_type: str) -> Dict[str, Any
         else:
             errors.append(f"Tika meta HTTP {resp.status_code}")
     except Exception as exc:  # pragma: no cover
-        errors.append(f"Tika meta error: {exc}")
+        if fallback_base_url:
+            try:
+                with path.open("rb") as fh:  # pragma: no cover
+                    resp = requests.put(
+                        fallback_base_url.rstrip("/") + "/meta",
+                        data=fh,
+                        headers={"Accept": "application/json"},
+                        timeout=timeout,
+                    )
+                if resp.ok:
+                    try:
+                        parsed = resp.json()
+                    except Exception:
+                        parsed = None
+                    if isinstance(parsed, dict):
+                        meta_data = parsed
+                else:
+                    errors.append(f"Tika meta HTTP {resp.status_code}")
+            except Exception as exc2:  # pragma: no cover
+                errors.append(f"Tika meta error: {exc2}")
+        else:
+            errors.append(f"Tika meta error: {exc}")
 
     if text_content is None and meta_data is None:
         if not errors:
@@ -2195,14 +2352,7 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
     mime_type = _detect_mime(path, mime_hint=mime_hint)
 
     clam = _run_clamav(path)
-    yara_matches_raw = _run_yara(path)
-    # Filtramos entradas que sólo contienen información de error para que
-    # no se contabilicen como coincidencias reales ni afecten al veredicto.
-    yara_matches = [
-        m
-        for m in yara_matches_raw
-        if not (isinstance(m, dict) and m.get("error"))
-    ]
+    yara_matches, yara_info = _run_yara(path)
     macro = _detect_macros(path)
     stego_status, stego_info = _analyze_steganography(path, mime_type)
 
@@ -2226,6 +2376,11 @@ def analyze_file(file_path: str | os.PathLike[str], mime_hint: str | None = None
         audio_analysis = _analyze_audio(path, mime_type)
 
     metadata = _extract_basic_metadata(path, mime_type)
+
+    # Guardamos el estado del motor YARA (incluyendo errores de configuración
+    # o compilación) en additional_results para que sea visible en informes.
+    if isinstance(yara_info, dict) and yara_info:
+        metadata["yara"] = yara_info
 
     # Extracción opcional de texto y metadatos ricos de documentos
     # (PDF, Office, etc.) mediante Apache Tika. Se limita a tipos de

@@ -36,8 +36,12 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://${POSTGRES_USER:-forenalyze}:${POSTGRES_PASSWORD:-forenalyze}@postgres:5432/${POSTGRES_DB:-forenalyze}}
       CLAMAV_PATH: ${CLAMAV_PATH:-clamscan}
       # SECRET_KEY debe venir de .env o del entorno; no se hardcodea aquí.
-      TIKA_ENABLED: ${TIKA_ENABLED:-"true"}
-      TIKA_SERVER_URL: ${TIKA_SERVER_URL:-http://tika:9998}
+      # Forzamos los valores correctos *dentro* de la red Docker Compose,
+      # aunque en .env se usen valores pensados para ejecución local.
+      TIKA_ENABLED: "true"
+      TIKA_SERVER_URL: http://tika:9998
+      YARA_ENABLED: "true"
+      YARA_RULES_PATH: /app/yara-signature-base/yara
     ports:
       - "8000:8000"
 
