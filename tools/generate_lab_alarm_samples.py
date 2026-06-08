@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import base64
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,13 +14,17 @@ class LabSample:
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SAMPLES_DIR = REPO_ROOT / "samples"
+YARA_RULE_PATH = REPO_ROOT / "yara-signature-base" / "yara" / "lab_yara_rules_critical.yar"
 
 MARKER = "FORENALYZE_LAB_CRITICAL"
 
 
-def _write_bytes(path: Path, data: bytes) -> None:
+def _write_bytes(path: Path, data: bytes, force: bool) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not force:
+        return False
     path.write_bytes(data)
+    return True
 
 
 def _make_minimal_pdf_with_base64_and_marker(marker: str) -> bytes:
@@ -117,32 +122,79 @@ def _make_dummy_mz_exe_with_marker(marker: str) -> bytes:
     return bytes(blob)
 
 
+def _write_lab_yara_rule(path: Path, force: bool) -> bool:
+    rule = f"""rule ForenAlyze_Lab_Critical_Marker
+{{
+    meta:
+        description = "ForenAlyze controlled lab marker for critical YARA alert tests"
+        severity = "critical"
+    strings:
+        $marker = "{MARKER}" ascii
+    condition:
+        $marker
+}}
+"""
+    return _write_bytes(path, rule.encode("utf-8"), force)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Create controlled ForenAlyze lab alarm samples")
+    parser.add_argument("--samples-dir", type=Path, default=SAMPLES_DIR)
+    parser.add_argument("--yara-rule-path", type=Path, default=YARA_RULE_PATH)
+    parser.add_argument("--force", action="store_true", help="Overwrite existing lab samples/rule")
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     created: list[LabSample] = []
+    skipped: list[LabSample] = []
 
-    # PDF that triggers stego (embedded base64) and contains marker
-    pdf_path = SAMPLES_DIR / "lab_pdf_stego_base64_marker.pdf"
-    _write_bytes(pdf_path, _make_minimal_pdf_with_base64_and_marker(MARKER))
-    created.append(
-        LabSample(
-            relpath=str(pdf_path.relative_to(REPO_ROOT)).replace("\\", "/"),
-            description="Valid PDF with embedded base64 (benign) + marker text; triggers stego heuristic.",
-        )
+    # PDF that triggers embedded-content/stego heuristics and contains marker.
+    pdf_path = args.samples_dir / "pdf_hidden_payload_01.pdf"
+    pdf_sample = LabSample(
+        relpath=str(pdf_path.relative_to(REPO_ROOT)).replace("\\", "/"),
+        description="Valid PDF with embedded base64 (benign) + marker text; triggers hidden-payload/stego heuristic.",
     )
+    if _write_bytes(pdf_path, _make_minimal_pdf_with_base64_and_marker(MARKER), args.force):
+        created.append(pdf_sample)
+    else:
+        skipped.append(pdf_sample)
 
-    # Optional dummy EXE for YARA-critical demonstrations
-    exe_path = SAMPLES_DIR / "lab_exe_marker_dummy.exe"
-    _write_bytes(exe_path, _make_dummy_mz_exe_with_marker(MARKER))
-    created.append(
-        LabSample(
-            relpath=str(exe_path.relative_to(REPO_ROOT)).replace("\\", "/"),
-            description="Harmless MZ-like dummy containing marker; intended for YARA tag=critical demos.",
-        )
+    # Dummy EXE for YARA-critical demonstrations.
+    exe_path = args.samples_dir / "exe_suspicious_01.exe"
+    exe_sample = LabSample(
+        relpath=str(exe_path.relative_to(REPO_ROOT)).replace("\\", "/"),
+        description="Harmless MZ-like dummy containing marker; intended for YARA tag=critical demos.",
     )
+    if _write_bytes(exe_path, _make_dummy_mz_exe_with_marker(MARKER), args.force):
+        created.append(exe_sample)
+    else:
+        skipped.append(exe_sample)
 
-    print("Created lab samples:")
-    for s in created:
-        print(f"- {s.relpath}: {s.description}")
+    rule_sample = LabSample(
+        relpath=str(args.yara_rule_path.relative_to(REPO_ROOT)).replace("\\", "/"),
+        description="YARA rule that matches the controlled lab marker and marks it as critical.",
+    )
+    if _write_lab_yara_rule(args.yara_rule_path, args.force):
+        created.append(rule_sample)
+    else:
+        skipped.append(rule_sample)
+
+    if created:
+        print("Created lab artifacts:")
+        for sample in created:
+            print(f"- {sample.relpath}: {sample.description}")
+    if skipped:
+        print("Skipped existing artifacts (use --force to overwrite):")
+        for sample in skipped:
+            print(f"- {sample.relpath}: {sample.description}")
+
+    print(
+        "\nAfter using --force, refresh samples/evaluation_manifest.csv with "
+        "tools/generate_results_csv.py --init-manifest or update the affected "
+        "hash/size fields manually."
+    )
 
 
 if __name__ == "__main__":
